@@ -1,13 +1,16 @@
 import csv
 import io
+import os
 from datetime import datetime, date, timezone
 
 from flask import Flask, render_template, request, redirect, url_for, flash, Response
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "employment-data-collect-secret"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///employment.db"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change-me-in-production")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", "sqlite:///employment.db"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
@@ -255,5 +258,12 @@ def delete_record(record_id):
 with app.app_context():
     db.create_all()
 
+
+@app.context_processor
+def inject_now():
+    return {"now": datetime.now(timezone.utc)}
+
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug)
