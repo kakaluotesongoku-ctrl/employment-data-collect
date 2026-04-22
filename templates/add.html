@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}添加数据 / Add Record — 就业数据采集系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-plus-circle me-2 text-primary"></i>添加就业记录 / Add Employment Record
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('add') }}" novalidate id="addForm">
+
+          <div class="row g-3">
+            <!-- Name -->
+            <div class="col-md-6">
+              <label for="name" class="form-label">姓名 / Name <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="name" name="name"
+                     maxlength="50" required
+                     value="{{ form_data.get('name', '') }}" />
+              <div class="invalid-feedback">请输入姓名 / Name is required.</div>
+            </div>
+
+            <!-- Company -->
+            <div class="col-md-6">
+              <label for="company" class="form-label">公司 / Company <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="company" name="company"
+                     maxlength="100" required
+                     value="{{ form_data.get('company', '') }}" />
+              <div class="invalid-feedback">请输入公司名 / Company is required.</div>
+            </div>
+
+            <!-- Position -->
+            <div class="col-md-6">
+              <label for="position" class="form-label">职位 / Position <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="position" name="position"
+                     maxlength="100" required
+                     value="{{ form_data.get('position', '') }}" />
+              <div class="invalid-feedback">请输入职位 / Position is required.</div>
+            </div>
+
+            <!-- Location -->
+            <div class="col-md-6">
+              <label for="location" class="form-label">工作地点 / Location <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="location" name="location"
+                     maxlength="50" required
+                     value="{{ form_data.get('location', '') }}" />
+              <div class="invalid-feedback">请输入工作地点 / Location is required.</div>
+            </div>
+
+            <!-- Industry -->
+            <div class="col-md-6">
+              <label for="industry" class="form-label">行业 / Industry <span class="text-danger">*</span></label>
+              <select class="form-select" id="industry" name="industry" required>
+                <option value="">— 请选择 / Select —</option>
+                {% for ind in industries %}
+                  <option value="{{ ind }}"
+                    {% if form_data.get('industry') == ind %}selected{% endif %}>
+                    {{ ind }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="invalid-feedback">请选择行业 / Industry is required.</div>
+            </div>
+
+            <!-- Employment Type -->
+            <div class="col-md-6">
+              <label for="employment_type" class="form-label">就业类型 / Employment Type <span class="text-danger">*</span></label>
+              <select class="form-select" id="employment_type" name="employment_type" required>
+                <option value="">— 请选择 / Select —</option>
+                {% for et in employment_types %}
+                  <option value="{{ et }}"
+                    {% if form_data.get('employment_type') == et %}selected{% endif %}>
+                    {{ et }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="invalid-feedback">请选择就业类型 / Employment type is required.</div>
+            </div>
+
+            <!-- Education -->
+            <div class="col-md-6">
+              <label for="education" class="form-label">学历 / Education <span class="text-danger">*</span></label>
+              <select class="form-select" id="education" name="education" required>
+                <option value="">— 请选择 / Select —</option>
+                {% for edu in education_levels %}
+                  <option value="{{ edu }}"
+                    {% if form_data.get('education') == edu %}selected{% endif %}>
+                    {{ edu }}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="invalid-feedback">请选择学历 / Education is required.</div>
+            </div>
+
+            <!-- Salary -->
+            <div class="col-md-6">
+              <label for="salary" class="form-label">月薪 / Monthly Salary (CNY)</label>
+              <input type="number" class="form-control" id="salary" name="salary"
+                     min="0" placeholder="可选 / Optional"
+                     value="{{ form_data.get('salary', '') }}" />
+              <div class="form-text">人民币元/月 ·  RMB per month</div>
+            </div>
+
+            <!-- Start Date -->
+            <div class="col-md-6">
+              <label for="start_date" class="form-label">入职日期 / Start Date</label>
+              <input type="date" class="form-control" id="start_date" name="start_date"
+                     value="{{ form_data.get('start_date', '') }}" />
+              <div class="form-text">可选 / Optional</div>
+            </div>
+          </div><!-- /row -->
+
+          <hr class="my-4" />
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-circle me-1"></i>提交 / Submit
+            </button>
+            <a href="{{ url_for('list_records') }}" class="btn btn-outline-secondary">
+              <i class="bi bi-x-circle me-1"></i>取消 / Cancel
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (() => {
+    'use strict';
+    const form = document.getElementById('addForm');
+    form.addEventListener('submit', event => {
+      if (!form.checkValidity()) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      form.classList.add('was-validated');
+    });
+  })();
+</script>
+{% endblock %}
