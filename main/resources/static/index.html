@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>云南省企业就业失业数据采集系统</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-blur bg-blur-left"></div>
+  <div class="bg-blur bg-blur-right"></div>
+  <main class="shell">
+    <section class="hero card">
+      <div>
+        <p class="eyebrow">B/S 业务系统</p>
+        <h1>云南省企业就业失业数据采集系统</h1>
+        <p class="lede">支持企业备案、月度填报、市级审核、省级审核、通知管理、汇总分析与导出。</p>
+      </div>
+      <div class="hero-meta">
+        <div><span>演示账号</span><strong>province_admin / P@ssw0rd1</strong></div>
+        <div><span>市级账号</span><strong>kunming_city / P@ssw0rd1</strong></div>
+        <div><span>企业账号</span><strong>alpha_corp / P@ssw0rd1</strong></div>
+      </div>
+    </section>
+
+    <section class="card login-card" id="loginPanel">
+      <h2>登录</h2>
+      <div class="grid two">
+        <label>账号<input id="username" placeholder="请输入账号" value="province_admin" /></label>
+        <label>密码<input id="password" type="password" placeholder="请输入密码" value="P@ssw0rd1" /></label>
+      </div>
+      <div class="grid two">
+        <label>角色
+          <select id="role">
+            <option value="PROVINCE">省级用户</option>
+            <option value="CITY">市级用户</option>
+            <option value="ENTERPRISE">企业用户</option>
+          </select>
+        </label>
+        <label>短信验证码<input id="smsCode" placeholder="连续失败后填写" /></label>
+      </div>
+      <div class="actions">
+        <button id="loginBtn" class="primary">登录系统</button>
+        <button id="logoutBtn" class="ghost hidden">退出登录</button>
+        <button id="refreshBtn" class="ghost hidden">刷新仪表盘</button>
+      </div>
+      <div class="divider"></div>
+      <h3>找回密码</h3>
+      <div class="grid two">
+        <label>账号<input id="resetUsername" placeholder="企业/市级/省级账号" /></label>
+        <label>手机号<input id="resetPhone" placeholder="绑定手机号" /></label>
+      </div>
+      <div class="grid two">
+        <label>新密码<input id="resetPassword" type="password" placeholder="8-16位，含字母数字特殊字符" /></label>
+        <label>确认新密码<input id="resetPasswordConfirm" type="password" /></label>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="resetPasswordBtn">重置密码</button>
+      </div>
+      <p class="status" id="loginStatus"></p>
+    </section>
+
+    <section class="dashboard hidden" id="dashboard">
+      <div class="card summary">
+        <div>
+          <p class="eyebrow">当前用户</p>
+          <h2 id="currentUserName">-</h2>
+          <p id="currentUserRole">-</p>
+        </div>
+        <div class="stats" id="stats"></div>
+      </div>
+
+      <div class="tabs card">
+        <button id="tabBtn-enterprise" data-tab="enterprise" class="tab active">企业</button>
+        <button id="tabBtn-city" data-tab="city" class="tab">市级</button>
+        <button id="tabBtn-province" data-tab="province" class="tab">省级</button>
+      </div>
+
+      <section class="card tab-panel active" id="tab-enterprise">
+        <h3>企业备案与报表</h3>
+        <div class="grid two">
+          <label>企业名称<input id="enterpriseName" /></label>
+          <label>组织机构代码<input id="orgCode" /></label>
+        </div>
+        <div class="grid three">
+          <label>地市<input id="cityName" value="昆明市" /></label>
+          <label>企业性质<input id="enterpriseNature" value="有限责任公司" /></label>
+          <label>所属行业<input id="industry" value="信息技术" /></label>
+        </div>
+        <div class="grid two">
+          <label>联系人<input id="contactName" value="张三" /></label>
+          <label>联系电话<input id="contactPhone" value="13900001111" /></label>
+        </div>
+        <div class="grid two">
+          <label>建档期就业人数<input id="archivedJobs" type="number" value="120" /></label>
+          <label>调查期就业人数<input id="surveyJobs" type="number" value="115" /></label>
+        </div>
+        <div class="grid two">
+          <label>其他原因<input id="otherReason" value="正常变动" /></label>
+          <label>减少类型<input id="decreaseType" value="人员流失" /></label>
+        </div>
+        <div class="grid two">
+          <label>主要原因<input id="mainReason" value="合同到期" /></label>
+          <label>主要原因说明<input id="mainReasonDescription" value="项目周期结束" /></label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="saveEnterpriseBtn">保存备案</button>
+          <button class="ghost" id="submitEnterpriseBtn">保存并提交备案</button>
+          <button class="ghost" id="saveReportBtn">保存报表草稿</button>
+          <button class="ghost" id="submitReportBtn">保存并提交报表</button>
+        </div>
+      </section>
+
+      <section class="card tab-panel" id="tab-city">
+        <h3>市级审核与通知</h3>
+        <div class="actions">
+          <button class="ghost" id="loadCityReportsBtn">加载待审报表</button>
+          <button class="ghost" id="cityApproveBtn">通过首条</button>
+          <button class="ghost" id="cityRejectBtn">退回首条</button>
+          <button class="ghost" id="cityBatchApproveBtn">批量通过</button>
+          <button class="ghost" id="cityBatchRejectBtn">批量退回</button>
+        </div>
+        <div id="cityReports" class="list"></div>
+        <div class="divider"></div>
+        <div class="grid two">
+          <label>通知标题<input id="noticeTitle" value="业务通知" /></label>
+          <label>适用地区<input id="noticeCities" value="昆明市" /></label>
+        </div>
+        <label>通知内容<textarea id="noticeContent" rows="5">请按时填报数据。</textarea></label>
+        <div class="actions">
+          <button class="primary" id="saveNoticeBtn">发布通知</button>
+        </div>
+      </section>
+
+      <section class="card tab-panel" id="tab-province">
+        <h3>省级管理与分析</h3>
+        <div class="actions wrap">
+          <button class="ghost" id="loadProvinceDataBtn">刷新省级数据</button>
+          <button class="ghost" id="reviewEnterpriseBtn">审核首个备案</button>
+          <button class="ghost" id="provinceApproveBtn">审核首条报表</button>
+          <button class="ghost" id="provinceCorrectBtn">代填/修正首条报表</button>
+          <button class="ghost" id="showSummaryBtn">查看汇总</button>
+          <button class="ghost" id="showSamplingBtn">查看取样分析</button>
+          <button class="ghost" id="publishMinistryBtn">上报部级</button>
+          <button class="ghost" id="exportMinistryBtn">导出部级 XML</button>
+          <button class="ghost" id="exportMinistryExcelBtn">导出部级 Excel</button>
+          <button class="ghost" id="exportMinistryJsonBtn">预览部级 JSON</button>
+          <button class="ghost" id="previewMinistryBtn">预览部级格式</button>
+        </div>
+        <div class="grid two">
+          <label>比较期A<select id="leftPeriod"></select></label>
+          <label>比较期B<select id="rightPeriod"></select></label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="compareBtn">对比分析</button>
+          <button class="ghost" id="trendBtn">趋势分析</button>
+          <button class="ghost" id="monitorBtn">系统监控</button>
+        </div>
+        <div class="divider"></div>
+        <h4>实时推送</h4>
+        <div class="grid two">
+          <div class="item">
+            <p>WebSocket 状态：<strong id="wsStatus">未连接</strong></p>
+          </div>
+          <div class="item">
+            <p>最近事件：<strong id="wsLastEvent">-</strong></p>
+          </div>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="connectWsBtn">连接推送</button>
+          <button class="ghost" id="disconnectWsBtn">断开推送</button>
+        </div>
+        <div id="wsFeed" class="list"></div>
+        <div id="analysis" class="analysis"></div>
+      </section>
+
+      <section class="card">
+        <h3>实时数据</h3>
+        <div class="grid three">
+          <label>通知标题关键字<input id="noticeKeywordFilter" placeholder="按标题搜索" /></label>
+          <label>开始日期<input id="noticeFromFilter" type="date" /></label>
+          <label>结束日期<input id="noticeToFilter" type="date" /></label>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="searchNoticesBtn">查询通知</button>
+          <button class="ghost" id="clearNoticesBtn">清空条件</button>
+        </div>
+        <div class="grid two">
+          <div>
+            <h4>通知</h4>
+            <div id="notices" class="list"></div>
+          </div>
+          <div>
+            <h4>最近报表</h4>
+            <div id="reports" class="list"></div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

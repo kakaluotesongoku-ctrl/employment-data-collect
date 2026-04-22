@@ -1,0 +1,1 @@
+This folder can be used for future MVC/security configuration if needed.
