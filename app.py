@@ -235,7 +235,7 @@ def export_csv():
         ])
 
     output.seek(0)
-    filename = f"employment_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"employment_data_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
     return Response(
         "\ufeff" + output.getvalue(),  # BOM for Excel compatibility
         mimetype="text/csv; charset=utf-8",
