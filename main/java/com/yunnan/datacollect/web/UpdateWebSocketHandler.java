@@ -26,13 +26,14 @@ public class UpdateWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         String token = extractToken(session.getUri());
+        SystemEventBroadcaster.ClientContext context;
         try {
-            platformService.currentUser(token);
+            context = platformService.resolveWsClientContext(token);
         } catch (RuntimeException ex) {
             session.close(CloseStatus.NOT_ACCEPTABLE.withReason("invalid token"));
             throw ex;
         }
-        broadcaster.register(session);
+        broadcaster.register(session, context);
         session.sendMessage(new TextMessage("{\"type\":\"connected\",\"payload\":{\"message\":\"WebSocket connected\"}}"));
     }
 

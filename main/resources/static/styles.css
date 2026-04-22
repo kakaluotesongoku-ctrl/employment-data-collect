@@ -70,7 +70,10 @@ body {
 .grid { display: grid; gap: 12px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 label { display: grid; gap: 8px; color: var(--muted); font-size: 13px; }
+.field { display: grid; gap: 8px; }
+.inline { display: flex; align-items: center; gap: 8px; }
 input, select, textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -95,6 +98,7 @@ button {
 button.primary { background: linear-gradient(135deg, #ffb347, #ff8f5a); color: #1f2937; }
 button.ghost { background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--border); }
 button:hover { transform: translateY(-1px); }
+button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 .tabs { display: flex; gap: 10px; }
 .tab { background: rgba(255,255,255,.05); color: var(--muted); }
@@ -103,6 +107,7 @@ button:hover { transform: translateY(-1px); }
 .tab-panel.active { display: block; animation: fade .25s ease-out; }
 .hidden { display: none !important; }
 .status { margin: 12px 0 0; color: var(--accent-2); min-height: 1.4em; }
+.pager-info { color: var(--muted); align-self: center; font-size: 13px; }
 .list { display: grid; gap: 10px; }
 .item { background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
 .item h4, .item p { margin: 0; }
@@ -122,6 +127,6 @@ button:hover { transform: translateY(-1px); }
 @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 960px) {
-  .hero, .summary, .grid.two, .grid.three { grid-template-columns: 1fr; }
+  .hero, .summary, .grid.two, .grid.three, .grid.four { grid-template-columns: 1fr; }
   .stats { grid-template-columns: 1fr; }
 }

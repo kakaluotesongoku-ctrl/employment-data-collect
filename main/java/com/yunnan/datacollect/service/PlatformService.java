@@ -161,7 +161,39 @@ public class PlatformService {
     }
 
     private void emit(String type, Object payload) {
-        systemEventBroadcaster.broadcast(type, payload);
+        systemEventBroadcaster.broadcast(type, payload, SystemEventBroadcaster.EventAudience.provinceOnly());
+    }
+
+    private void emit(String type, Object payload, SystemEventBroadcaster.EventAudience audience) {
+        systemEventBroadcaster.broadcast(type, payload, audience);
+    }
+
+    private SystemEventBroadcaster.EventAudience reportAudience(MonthlyReport report) {
+        return SystemEventBroadcaster.EventAudience.cityAndEnterprise(report.cityName, report.enterpriseId);
+    }
+
+    private SystemEventBroadcaster.EventAudience enterpriseAudience(EnterpriseProfile profile) {
+        return SystemEventBroadcaster.EventAudience.cityAndEnterprise(profile.cityName, profile.id);
+    }
+
+    private SystemEventBroadcaster.EventAudience noticeAudience(NoticeRecord notice) {
+        if (notice.appliesToAll) {
+            return SystemEventBroadcaster.EventAudience.all();
+        }
+        Set<String> cities = notice.targetCities == null
+                ? Set.of()
+                : notice.targetCities.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        return SystemEventBroadcaster.EventAudience.cities(cities);
+    }
+
+    public SystemEventBroadcaster.ClientContext resolveWsClientContext(String token) {
+        UserAccount account = requireUser(token);
+        Long enterpriseId = null;
+        if (account.role == Role.ENTERPRISE) {
+            EnterpriseProfile profile = findEnterpriseForActor(account);
+            enterpriseId = profile == null ? null : profile.id;
+        }
+        return new SystemEventBroadcaster.ClientContext(account.id, account.role.name(), account.cityName, enterpriseId);
     }
 
     public LoginResponse login(LoginRequest request, String clientIp) {
@@ -323,7 +355,7 @@ public class PlatformService {
             profile.enterpriseUserId = account.id;
         }
         persistState();
-        emit("ENTERPRISE_SAVE", Map.of("enterpriseId", profile.id, "enterpriseName", profile.enterpriseName, "submitted", submit));
+        emit("ENTERPRISE_SAVE", Map.of("enterpriseId", profile.id, "enterpriseName", profile.enterpriseName, "submitted", submit), enterpriseAudience(profile));
         return EnterpriseView.from(profile, getPeriodName(profile));
     }
 
@@ -337,7 +369,7 @@ public class PlatformService {
         log(approved ? "ENTERPRISE_APPROVE" : "ENTERPRISE_REJECT", "ENTERPRISE", enterpriseId,
                 approved ? "备案审核通过" : "备案审核退回", account.id, currentIp(account));
         persistState();
-        emit("ENTERPRISE_REVIEW", Map.of("enterpriseId", enterpriseId, "approved", approved));
+        emit("ENTERPRISE_REVIEW", Map.of("enterpriseId", enterpriseId, "approved", approved), enterpriseAudience(profile));
         return EnterpriseView.from(profile, getPeriodName(profile));
     }
 
@@ -354,6 +386,12 @@ public class PlatformService {
                 .sorted(Comparator.comparing((EnterpriseProfile p) -> p.updatedAt == null ? Instant.EPOCH : p.updatedAt).reversed())
                 .map(profile -> EnterpriseView.from(profile, getPeriodName(profile)))
                 .collect(Collectors.toList());
+    }
+
+    public PagedResult<EnterpriseView> listEnterprisesPage(String token, String status, String city, String keyword,
+                                                           String nature, String industry, String orgCode,
+                                                           Integer page, Integer size) {
+        return paginate(listEnterprises(token, status, city, keyword, nature, industry, orgCode), page, size);
     }
 
     public MonthlyReportView saveReport(String token, MonthlyReportRequest request, boolean submit) {
@@ -399,7 +437,7 @@ public class PlatformService {
             report.status = ReportStatus.DRAFT;
         }
         persistState();
-        emit("REPORT_SAVE", Map.of("reportId", report.id, "periodId", period.id, "submit", submit));
+        emit("REPORT_SAVE", Map.of("reportId", report.id, "periodId", period.id, "submit", submit), reportAudience(report));
         return MonthlyReportView.from(report);
     }
 
@@ -427,6 +465,11 @@ public class PlatformService {
                 .collect(Collectors.toList());
     }
 
+    public PagedResult<MonthlyReportView> listReportsPage(String token, String state, Long periodId, String cityName,
+                                                          Integer page, Integer size) {
+        return paginate(listReports(token, state, periodId, cityName), page, size);
+    }
+
     public MonthlyReportView reviewCityReport(String token, long reportId, boolean approved, String reason) {
         UserAccount account = requireRole(token, Role.CITY);
         MonthlyReport report = requireReport(reportId);
@@ -448,7 +491,7 @@ public class PlatformService {
         }
         report.updatedAt = Instant.now();
         persistState();
-        emit("CITY_REVIEW", Map.of("reportId", report.id, "approved", approved));
+        emit("CITY_REVIEW", Map.of("reportId", report.id, "approved", approved), reportAudience(report));
         return MonthlyReportView.from(report);
     }
 
@@ -492,7 +535,7 @@ public class PlatformService {
         }
         report.updatedAt = Instant.now();
         persistState();
-        emit("PROVINCE_REVIEW", Map.of("reportId", report.id, "approved", approved));
+        emit("PROVINCE_REVIEW", Map.of("reportId", report.id, "approved", approved), reportAudience(report));
         return MonthlyReportView.from(report);
     }
 
@@ -518,7 +561,7 @@ public class PlatformService {
         report.updatedAt = Instant.now();
         log("PROVINCE_REPORT_CORRECT", "REPORT", report.id, "省级代填/修改数据", account.id, currentIp(account));
         persistState();
-        emit("PROVINCE_CORRECT", Map.of("reportId", report.id));
+        emit("PROVINCE_CORRECT", Map.of("reportId", report.id), reportAudience(report));
         return MonthlyReportView.from(report);
     }
 
@@ -541,6 +584,11 @@ public class PlatformService {
                 .sorted(Comparator.comparing((NoticeRecord n) -> n.updatedAt == null ? Instant.EPOCH : n.updatedAt).reversed())
                 .map(NoticeView::from)
                 .collect(Collectors.toList());
+    }
+
+    public PagedResult<NoticeView> listNoticesPage(String token, String status, String keyword, String cityName,
+                                                   String createdFrom, String createdTo, Integer page, Integer size) {
+        return paginate(listNotices(token, status, keyword, cityName, createdFrom, createdTo), page, size);
     }
 
     public NoticeView saveNotice(String token, NoticeRequest request, boolean publishNow) {
@@ -572,7 +620,7 @@ public class PlatformService {
         notice.updatedAt = Instant.now();
         log("NOTICE_SAVE", "NOTICE", notice.id, "发布或修改通知", account.id, currentIp(account));
         persistState();
-        emit("NOTICE_SAVE", Map.of("noticeId", notice.id, "title", notice.title, "publishNow", publishNow));
+        emit("NOTICE_SAVE", Map.of("noticeId", notice.id, "title", notice.title, "publishNow", publishNow), noticeAudience(notice));
         return NoticeView.from(notice);
     }
 
@@ -591,7 +639,7 @@ public class PlatformService {
             notice.updatedAt = Instant.now();
             log("NOTICE_DELETE", "NOTICE", notice.id, "删除通知", account.id, currentIp(account));
             persistState();
-            emit("NOTICE_DELETE", Map.of("noticeId", notice.id));
+                    emit("NOTICE_DELETE", Map.of("noticeId", notice.id), noticeAudience(notice));
             return NoticeView.from(notice);
         }
         throw forbidden("无权操作该通知");
@@ -704,6 +752,26 @@ public class PlatformService {
         return exportWorkbook("企业备案", List.of("ID", "企业名称", "组织机构代码", "地市", "备案状态", "联系人", "联系电话"), rows.stream().map(row -> List.of(String.valueOf(row.id()), String.valueOf(row.enterpriseName()), String.valueOf(row.orgCode()), String.valueOf(row.cityName()), String.valueOf(row.status()), String.valueOf(row.contactName()), String.valueOf(row.contactPhone()))).toList());
     }
 
+    public byte[] exportEnterprisesCsv(String token, List<EnterpriseView> rows) {
+        requireRole(token, Role.PROVINCE, Role.CITY);
+        List<List<String>> data = new ArrayList<>();
+        data.add(List.of("ID", "企业名称", "组织机构代码", "地市", "备案状态", "联系人", "联系电话"));
+        for (EnterpriseView row : rows) {
+            data.add(List.of(String.valueOf(row.id()), String.valueOf(row.enterpriseName()), String.valueOf(row.orgCode()), String.valueOf(row.cityName()), String.valueOf(row.status()), String.valueOf(row.contactName()), String.valueOf(row.contactPhone())));
+        }
+        return exportCsv(data);
+    }
+
+    public byte[] exportReportsCsv(String token, List<MonthlyReportView> rows) {
+        requireRole(token, Role.PROVINCE, Role.CITY);
+        List<List<String>> data = new ArrayList<>();
+        data.add(List.of("ID", "企业名称", "调查期", "建档期就业人数", "调查期就业人数", "状态", "市级审核", "省级审核"));
+        for (MonthlyReportView row : rows) {
+            data.add(List.of(String.valueOf(row.id()), String.valueOf(row.enterpriseName()), String.valueOf(row.periodName()), String.valueOf(row.archivedJobs()), String.valueOf(row.surveyJobs()), String.valueOf(row.status()), String.valueOf(row.cityReviewReason()), String.valueOf(row.provinceReviewReason())));
+        }
+        return exportCsv(data);
+    }
+
     public LoginResponse createUser(String token, UserCreateRequest request) {
         requireRole(token, Role.PROVINCE);
         if (usersByUsername.containsKey(request.username().trim().toLowerCase(Locale.ROOT))) {
@@ -776,6 +844,19 @@ public class PlatformService {
         rows.add(List.of("岗位减少总数", String.valueOf(summary.jobDecreaseTotal())));
         rows.add(List.of("岗位变化数量占比", String.format(Locale.ROOT, "%.2f%%", summary.changeRatio())));
         return exportWorkbook("汇总数据", List.of("指标", "数值"), rows);
+    }
+
+    public byte[] exportSummaryCsv(String token, Long periodId) {
+        SummaryView summary = summary(token, periodId);
+        return exportCsv(List.of(
+                List.of("指标", "数值"),
+                List.of("企业总数", String.valueOf(summary.enterpriseCount())),
+                List.of("建档期总岗位数", String.valueOf(summary.archivedJobs())),
+                List.of("调查期总岗位数", String.valueOf(summary.surveyJobs())),
+                List.of("岗位变化总数", String.valueOf(summary.jobChangeTotal())),
+                List.of("岗位减少总数", String.valueOf(summary.jobDecreaseTotal())),
+                List.of("岗位变化数量占比", String.format(Locale.ROOT, "%.2f%%", summary.changeRatio()))
+        ));
     }
 
     public PublishResult publishToMinistry(String token, Long periodId) {
@@ -981,6 +1062,29 @@ public class PlatformService {
         } catch (java.io.IOException ex) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Excel导出失败", ex);
         }
+    }
+
+    private byte[] exportCsv(List<List<String>> rows) {
+        StringBuilder builder = new StringBuilder();
+        builder.append('\uFEFF');
+        for (List<String> row : rows) {
+            for (int i = 0; i < row.size(); i++) {
+                if (i > 0) {
+                    builder.append(',');
+                }
+                builder.append(csvEscape(row.get(i)));
+            }
+            builder.append('\n');
+        }
+        return builder.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private String csvEscape(String value) {
+        String text = value == null ? "" : value;
+        if (text.contains("\"") || text.contains(",") || text.contains("\n") || text.contains("\r")) {
+            return '"' + text.replace("\"", "\"\"") + '"';
+        }
+        return text;
     }
 
     private boolean canSeeEnterprise(UserAccount account, EnterpriseProfile profile) {
@@ -1360,6 +1464,22 @@ public class PlatformService {
         return idSequence.incrementAndGet();
     }
 
+    private <T> PagedResult<T> paginate(List<T> data, Integer page, Integer size) {
+        int normalizedPage = page == null || page < 1 ? 1 : page;
+        int normalizedSize = size == null || size < 1 ? 10 : size;
+        if (normalizedSize > 100) {
+            throw badRequest("每页条数不能超过100");
+        }
+        long total = data.size();
+        int totalPages = total == 0 ? 1 : (int) ((total + normalizedSize - 1) / normalizedSize);
+        int fromIndex = (normalizedPage - 1) * normalizedSize;
+        if (fromIndex >= data.size()) {
+            return new PagedResult<>(List.of(), normalizedPage, normalizedSize, total, totalPages);
+        }
+        int toIndex = Math.min(fromIndex + normalizedSize, data.size());
+        return new PagedResult<>(data.subList(fromIndex, toIndex), normalizedPage, normalizedSize, total, totalPages);
+    }
+
     private boolean containsIgnoreCase(String value, String keyword) {
         return value != null && keyword != null && value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
     }
@@ -1688,6 +1808,7 @@ public class PlatformService {
         static LoginResponse locked(String message, Instant lockUntil) { return new LoginResponse(false, message, null, null, false, null, null, lockUntil); }
     }
     public record UserView(long id, String username, String role, String cityName, boolean enabled, Instant lockedUntil) {}
+    public record PagedResult<T>(List<T> items, int page, int size, long total, int totalPages) {}
     public record EnterpriseRequest(Long enterpriseId, String regionProvince, String cityName, String countyName, String orgCode, String enterpriseName, String enterpriseNature, String industry, String contactName, String contactPhone, String address) {}
     public record EnterpriseView(long id, String enterpriseName, String orgCode, String cityName, String countyName, String enterpriseNature, String industry, String contactName, String contactPhone, String status, String reviewReason, Instant submittedAt, Instant reviewedAt) {
         static EnterpriseView from(EnterpriseProfile profile, String latestPeriodName) {

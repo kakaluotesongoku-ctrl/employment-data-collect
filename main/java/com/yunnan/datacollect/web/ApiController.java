@@ -91,8 +91,10 @@ public class ApiController {
                                       @RequestParam(required = false) String keyword,
                                       @RequestParam(required = false) String nature,
                                       @RequestParam(required = false) String industry,
-                                      @RequestParam(required = false) String orgCode) {
-        return ApiResponse.ok(platformService.listEnterprises(token, status, city, keyword, nature, industry, orgCode));
+                                      @RequestParam(required = false) String orgCode,
+                                      @RequestParam(defaultValue = "1") Integer page,
+                                      @RequestParam(defaultValue = "10") Integer size) {
+        return ApiResponse.ok(platformService.listEnterprisesPage(token, status, city, keyword, nature, industry, orgCode, page, size));
     }
 
     @PostMapping("/enterprises/save")
@@ -116,6 +118,16 @@ public class ApiController {
                                   @RequestParam(required = false) Long periodId,
                                   @RequestParam(required = false) String city) {
         return ApiResponse.ok(platformService.listReports(token, status, periodId, city));
+    }
+
+    @GetMapping("/reports/page")
+    public ApiResponse<?> reportsPage(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                      @RequestParam(required = false) String status,
+                                      @RequestParam(required = false) Long periodId,
+                                      @RequestParam(required = false) String city,
+                                      @RequestParam(defaultValue = "1") Integer page,
+                                      @RequestParam(defaultValue = "10") Integer size) {
+        return ApiResponse.ok(platformService.listReportsPage(token, status, periodId, city, page, size));
     }
 
     @PostMapping("/reports/save")
@@ -205,8 +217,10 @@ public class ApiController {
                                   @RequestParam(required = false) String keyword,
                                   @RequestParam(required = false) String city,
                                   @RequestParam(required = false) String createdFrom,
-                                  @RequestParam(required = false) String createdTo) {
-        return ApiResponse.ok(platformService.listNotices(token, status, keyword, city, createdFrom, createdTo));
+                                  @RequestParam(required = false) String createdTo,
+                                  @RequestParam(defaultValue = "1") Integer page,
+                                  @RequestParam(defaultValue = "10") Integer size) {
+        return ApiResponse.ok(platformService.listNoticesPage(token, status, keyword, city, createdFrom, createdTo, page, size));
     }
 
     @PostMapping("/notices/save")
@@ -288,12 +302,30 @@ public class ApiController {
                 .body(file);
     }
 
+    @GetMapping("/dashboard/export/reports-csv")
+    public ResponseEntity<byte[]> exportReportsCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
+        byte[] file = platformService.exportReportsCsv(token, platformService.listReports(token, null, null, null));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=reports.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+    }
+
     @GetMapping("/dashboard/export/enterprises")
     public ResponseEntity<byte[]> exportEnterprises(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
         byte[] file = platformService.exportEnterprisesExcel(token, platformService.listEnterprises(token, null, null, null, null, null, null));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=enterprises.xlsx")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(file);
+    }
+
+    @GetMapping("/dashboard/export/enterprises-csv")
+    public ResponseEntity<byte[]> exportEnterprisesCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
+        byte[] file = platformService.exportEnterprisesCsv(token, platformService.listEnterprises(token, null, null, null, null, null, null));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=enterprises.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
                 .body(file);
     }
 
@@ -306,6 +338,16 @@ public class ApiController {
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(file);
     }
+
+        @GetMapping("/dashboard/export/summary-csv")
+        public ResponseEntity<byte[]> exportSummaryCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                               @RequestParam(required = false) Long periodId) {
+        byte[] file = platformService.exportSummaryCsv(token, periodId);
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=summary.csv")
+            .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+            .body(file);
+        }
 
     @GetMapping("/health")
     public ApiResponse<?> health() {

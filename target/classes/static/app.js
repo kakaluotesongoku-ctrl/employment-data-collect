@@ -1,4 +1,18 @@
-const state = { token: null, user: null, dashboard: null, ws: null, wsRetryTimer: null };
+const state = {
+  token: null,
+  user: null,
+  dashboard: null,
+  ws: null,
+  wsRetryTimer: null,
+  noticePage: 1,
+  noticeSize: 5,
+  noticeQuery: { keyword: '', createdFrom: '', createdTo: '' },
+  enterprisePage: 1,
+  enterpriseSize: 5,
+  enterpriseQuery: { keyword: '', city: '', nature: '', industry: '' },
+  myReportPage: 1,
+  myReportSize: 5
+};
 
 const $ = (id) => document.getElementById(id);
 const show = (el, visible) => el.classList.toggle('hidden', !visible);
@@ -163,6 +177,27 @@ function renderSelectableList(target, rows, empty = '暂无数据') {
   target.innerHTML = rows.map(row => `<label class="item selectable"><input type="checkbox" class="batch-report-checkbox" value="${row.id}"><span><strong>${row.enterpriseName}</strong><br>${row.periodName || ''} · ${row.status || ''} · ${row.archivedJobs ?? ''} → ${row.surveyJobs ?? ''}</span></label>`).join('');
 }
 
+function renderEnterpriseRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无企业数据</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `<div class="item"><h4>${escapeHtml(row.enterpriseName || '-')}</h4><p>${escapeHtml(row.cityName || '-')} · ${escapeHtml(row.enterpriseNature || '-')} · ${escapeHtml(row.industry || '-')}</p><p>组织机构代码：${escapeHtml(row.orgCode || '-')} · 状态：${escapeHtml(row.status || '-')}</p></div>`).join('');
+}
+
+function renderPager(prefix, pageData) {
+  const label = $(`${prefix}PageInfo`);
+  const prevBtn = $(`${prefix}PrevBtn`);
+  const nextBtn = $(`${prefix}NextBtn`);
+  if (!label || !prevBtn || !nextBtn) return;
+  const current = pageData.page || 1;
+  const totalPages = pageData.totalPages || 1;
+  const total = pageData.total || 0;
+  label.textContent = `第 ${current}/${totalPages} 页，共 ${total} 条`;
+  prevBtn.disabled = current <= 1;
+  nextBtn.disabled = current >= totalPages;
+}
+
 function escapeHtml(text) {
   return String(text)
     .replaceAll('&', '&amp;')
@@ -179,13 +214,15 @@ async function refreshDashboard() {
   $('currentUserRole').textContent = `${data.user.role} · ${data.user.cityName || ''}`;
   applyRoleView(data.user.role);
   renderStats(data.summary, data.sampling, data.monitor);
-  renderList($('notices'), data.notices || [], '暂无通知');
   renderList($('reports'), data.reports || [], '暂无报表');
 
   const periods = await request('/api/periods');
   const options = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   $('leftPeriod').innerHTML = options;
   $('rightPeriod').innerHTML = options;
+  await loadNoticesPage(1);
+  await loadEnterprisesPage(1);
+  await loadMyReportsPage(1);
 }
 
 async function login() {
@@ -248,24 +285,73 @@ async function resetPassword() {
 }
 
 async function searchNotices() {
-  const keyword = $('noticeKeywordFilter').value.trim();
-  const createdFrom = $('noticeFromFilter').value;
-  const createdTo = $('noticeToFilter').value;
-  const params = new URLSearchParams();
-  if (keyword) params.set('keyword', keyword);
-  if (createdFrom) params.set('createdFrom', createdFrom);
-  if (createdTo) params.set('createdTo', createdTo);
-  const query = params.toString();
-  const rows = await request(`/api/notices${query ? `?${query}` : ''}`);
-  renderList($('notices'), rows, '暂无通知');
-  $('loginStatus').textContent = `通知查询完成：${rows.length} 条`;
+  state.noticeQuery.keyword = $('noticeKeywordFilter').value.trim();
+  state.noticeQuery.createdFrom = $('noticeFromFilter').value;
+  state.noticeQuery.createdTo = $('noticeToFilter').value;
+  await loadNoticesPage(1);
 }
 
 async function clearNoticesFilter() {
   $('noticeKeywordFilter').value = '';
   $('noticeFromFilter').value = '';
   $('noticeToFilter').value = '';
-  await refreshDashboard();
+  state.noticeQuery = { keyword: '', createdFrom: '', createdTo: '' };
+  await loadNoticesPage(1);
+}
+
+async function loadNoticesPage(page) {
+  state.noticePage = page;
+  const params = new URLSearchParams();
+  if (state.noticeQuery.keyword) params.set('keyword', state.noticeQuery.keyword);
+  if (state.noticeQuery.createdFrom) params.set('createdFrom', state.noticeQuery.createdFrom);
+  if (state.noticeQuery.createdTo) params.set('createdTo', state.noticeQuery.createdTo);
+  params.set('page', String(state.noticePage));
+  params.set('size', String(state.noticeSize));
+  const data = await request(`/api/notices?${params.toString()}`);
+  renderList($('notices'), data.items || [], '暂无通知');
+  renderPager('notice', data);
+  $('loginStatus').textContent = `通知查询完成：${data.total} 条`;
+}
+
+async function searchEnterprises() {
+  state.enterpriseQuery.keyword = $('enterpriseKeywordFilter').value.trim();
+  state.enterpriseQuery.city = $('enterpriseCityFilter').value.trim();
+  state.enterpriseQuery.nature = $('enterpriseNatureFilter').value.trim();
+  state.enterpriseQuery.industry = $('enterpriseIndustryFilter').value.trim();
+  await loadEnterprisesPage(1);
+}
+
+async function clearEnterpriseFilter() {
+  $('enterpriseKeywordFilter').value = '';
+  $('enterpriseCityFilter').value = '';
+  $('enterpriseNatureFilter').value = '';
+  $('enterpriseIndustryFilter').value = '';
+  state.enterpriseQuery = { keyword: '', city: '', nature: '', industry: '' };
+  await loadEnterprisesPage(1);
+}
+
+async function loadEnterprisesPage(page) {
+  state.enterprisePage = page;
+  const params = new URLSearchParams();
+  if (state.enterpriseQuery.keyword) params.set('keyword', state.enterpriseQuery.keyword);
+  if (state.enterpriseQuery.city) params.set('city', state.enterpriseQuery.city);
+  if (state.enterpriseQuery.nature) params.set('nature', state.enterpriseQuery.nature);
+  if (state.enterpriseQuery.industry) params.set('industry', state.enterpriseQuery.industry);
+  params.set('page', String(state.enterprisePage));
+  params.set('size', String(state.enterpriseSize));
+  const data = await request(`/api/enterprises?${params.toString()}`);
+  renderEnterpriseRows($('enterprisesResult'), data.items || []);
+  renderPager('enterprise', data);
+}
+
+async function loadMyReportsPage(page) {
+  state.myReportPage = page;
+  const params = new URLSearchParams();
+  params.set('page', String(state.myReportPage));
+  params.set('size', String(state.myReportSize));
+  const data = await request(`/api/reports/page?${params.toString()}`);
+  renderList($('myReports'), data.items || [], '暂无我的报表');
+  renderPager('myReport', data);
 }
 
 async function saveEnterprise(submit) {
@@ -350,9 +436,53 @@ async function saveNotice() {
   await refreshDashboard();
 }
 
+async function createUser() {
+  const body = {
+    username: $('newUsername').value,
+    password: $('newPassword').value,
+    role: $('newRole').value,
+    cityName: $('newUserCity').value,
+    phone: $('newUserPhone').value
+  };
+  const data = await request('/api/users', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = `账号创建成功：${data.user.username}`;
+  await refreshDashboard();
+}
+
+async function savePeriod() {
+  const body = {
+    name: $('periodName').value,
+    startDate: $('periodStart').value,
+    endDate: $('periodEnd').value,
+    submissionStart: $('periodSubmitStart').value,
+    submissionEnd: $('periodSubmitEnd').value,
+    active: $('periodActive').checked
+  };
+  const data = await request('/api/periods', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = `调查期保存成功：${data.name}`;
+  await refreshDashboard();
+}
+
+async function exportReportsCsv() {
+  await downloadFile('/api/dashboard/export/reports-csv', 'reports.csv');
+  $('loginStatus').textContent = '报表 CSV 已导出';
+}
+
+async function exportEnterprisesCsv() {
+  await downloadFile('/api/dashboard/export/enterprises-csv', 'enterprises.csv');
+  $('loginStatus').textContent = '企业 CSV 已导出';
+}
+
+async function exportSummaryCsv() {
+  const periodId = periodsSelectValue();
+  await downloadFile(`/api/dashboard/export/summary-csv?periodId=${periodId}`, 'summary.csv');
+  $('loginStatus').textContent = '汇总 CSV 已导出';
+}
+
 async function provinceAction(action) {
   const reports = await request('/api/reports');
-  const enterprises = await request('/api/enterprises');
+  const enterprisePage = await request('/api/enterprises?page=1&size=100');
+  const enterprises = enterprisePage.items || [];
   if (action === 'enterprise') {
     if (!enterprises.length) throw new Error('没有备案可审核');
     await request(`/api/enterprises/${enterprises[0].id}/review?approved=true`, { method: 'POST' });
@@ -513,6 +643,8 @@ function bindActions() {
   $('cityBatchApproveBtn').addEventListener('click', () => cityBatchProcess(true));
   $('cityBatchRejectBtn').addEventListener('click', () => cityBatchProcess(false));
   $('saveNoticeBtn').addEventListener('click', saveNotice);
+  $('createUserBtn').addEventListener('click', createUser);
+  $('savePeriodBtn').addEventListener('click', savePeriod);
   $('reviewEnterpriseBtn').addEventListener('click', () => provinceAction('enterprise'));
   $('provinceApproveBtn').addEventListener('click', () => provinceAction('approve'));
   $('provinceCorrectBtn').addEventListener('click', () => provinceAction('correct'));
@@ -521,8 +653,19 @@ function bindActions() {
   $('previewMinistryBtn').addEventListener('click', previewMinistry);
   $('exportMinistryExcelBtn').addEventListener('click', exportMinistryExcel);
   $('exportMinistryJsonBtn').addEventListener('click', exportMinistryJson);
+  $('exportReportsCsvBtn').addEventListener('click', exportReportsCsv);
+  $('exportEnterprisesCsvBtn').addEventListener('click', exportEnterprisesCsv);
+  $('exportSummaryCsvBtn').addEventListener('click', exportSummaryCsv);
   $('searchNoticesBtn').addEventListener('click', searchNotices);
   $('clearNoticesBtn').addEventListener('click', clearNoticesFilter);
+  $('noticePrevBtn').addEventListener('click', () => loadNoticesPage(Math.max(1, state.noticePage - 1)));
+  $('noticeNextBtn').addEventListener('click', () => loadNoticesPage(state.noticePage + 1));
+  $('searchEnterprisesBtn').addEventListener('click', searchEnterprises);
+  $('clearEnterprisesBtn').addEventListener('click', clearEnterpriseFilter);
+  $('enterprisePrevBtn').addEventListener('click', () => loadEnterprisesPage(Math.max(1, state.enterprisePage - 1)));
+  $('enterpriseNextBtn').addEventListener('click', () => loadEnterprisesPage(state.enterprisePage + 1));
+  $('myReportPrevBtn').addEventListener('click', () => loadMyReportsPage(Math.max(1, state.myReportPage - 1)));
+  $('myReportNextBtn').addEventListener('click', () => loadMyReportsPage(state.myReportPage + 1));
   $('showSummaryBtn').addEventListener('click', showSummary);
   $('showSamplingBtn').addEventListener('click', showSampling);
   $('compareBtn').addEventListener('click', compare);
