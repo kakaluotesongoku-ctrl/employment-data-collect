@@ -79,6 +79,12 @@
       <section class="card tab-panel active" id="tab-enterprise">
         <h3>企业备案与报表</h3>
         <div class="grid two">
+          <label>调查期
+            <select id="reportPeriod"></select>
+          </label>
+          <label>当前编辑报表ID<input id="reportId" type="number" placeholder="新建时留空" /></label>
+        </div>
+        <div class="grid two">
           <label>企业名称<input id="enterpriseName" /></label>
           <label>组织机构代码<input id="orgCode" /></label>
         </div>
@@ -103,14 +109,24 @@
           <label>主要原因<input id="mainReason" value="合同到期" /></label>
           <label>主要原因说明<input id="mainReasonDescription" value="项目周期结束" /></label>
         </div>
+        <div class="grid two">
+          <label>次要原因<input id="secondaryReason" value="市场变化" /></label>
+          <label>次要原因说明<input id="secondaryReasonDescription" value="二级原因说明" /></label>
+        </div>
+        <div class="grid two">
+          <label>第三原因<input id="thirdReason" value="其他" /></label>
+          <label>第三原因说明<input id="thirdReasonDescription" value="三级原因说明" /></label>
+        </div>
         <div class="actions mobile-critical-actions">
           <button class="primary" id="saveEnterpriseBtn">保存备案</button>
           <button class="ghost" id="submitEnterpriseBtn">保存并提交备案</button>
           <button class="ghost" id="saveReportBtn">保存报表草稿</button>
           <button class="ghost" id="submitReportBtn">保存并提交报表</button>
+          <button class="ghost" id="clearReportBtn">清空报表表单</button>
         </div>
         <div class="divider"></div>
         <h4>企业数据查询</h4>
+        <p class="status">点击下方报表可回填到上方表单，继续编辑后再保存或提交。</p>
         <div class="actions">
           <button class="ghost" id="myReportPrevBtn">上一页</button>
           <button class="ghost" id="myReportNextBtn">下一页</button>
@@ -131,12 +147,22 @@
         <div id="cityReports" class="list"></div>
         <div class="divider"></div>
         <div class="grid two">
+          <label>通知ID<input id="noticeId" type="number" placeholder="新建时留空" /></label>
           <label>通知标题<input id="noticeTitle" value="业务通知" /></label>
+        </div>
+        <div class="grid two">
           <label>适用地区<input id="noticeCities" value="昆明市" /></label>
+          <label>发布模式
+            <select id="noticePublishMode">
+              <option value="true">立即发布</option>
+              <option value="false">保存草稿</option>
+            </select>
+          </label>
         </div>
         <label>通知内容<textarea id="noticeContent" rows="5">请按时填报数据。</textarea></label>
-        <div class="actions">
-          <button class="primary" id="saveNoticeBtn">发布通知</button>
+        <div class="actions wrap mobile-critical-actions">
+          <button class="primary" id="saveNoticeBtn">保存/发布通知</button>
+          <button class="ghost" id="clearNoticeBtn">清空通知表单</button>
         </div>
       </section>
 

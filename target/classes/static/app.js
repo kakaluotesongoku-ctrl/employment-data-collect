@@ -215,6 +215,24 @@ function renderList(target, rows, empty = '暂无数据') {
   }).join('');
 }
 
+function renderMyReportRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无我的报表</p></div>`;
+    return;
+  }
+  target.dataset.items = JSON.stringify(rows);
+  target.innerHTML = rows.map(row => `
+    <div class="item">
+      <h4>${escapeHtml(row.periodName || '-')} · ${escapeHtml(row.status || '-')}</h4>
+      <p>ID:${row.id} · ${row.enterpriseName || ''}</p>
+      <p>建档期：${row.archivedJobs ?? '-'} · 调查期：${row.surveyJobs ?? '-'} · 更新时间：${escapeHtml(row.updatedAt || row.createdAt || '-')}</p>
+      <div class="actions">
+        <button class="ghost select-my-report-btn" data-report-id="${row.id}" data-period-name="${escapeHtml(row.periodName || '')}">编辑此报表</button>
+      </div>
+    </div>
+  `).join('');
+}
+
 function renderSelectableList(target, rows, empty = '暂无数据') {
   if (!rows || rows.length === 0) {
     target.innerHTML = `<div class="item"><p>${empty}</p></div>`;
@@ -321,6 +339,55 @@ function renderPager(prefix, pageData) {
   nextBtn.disabled = current >= totalPages;
 }
 
+function resetReportForm() {
+  $('reportId').value = '';
+  $('archivedJobs').value = '120';
+  $('surveyJobs').value = '115';
+  $('otherReason').value = '正常变动';
+  $('decreaseType').value = '人员流失';
+  $('mainReason').value = '合同到期';
+  $('mainReasonDescription').value = '项目周期结束';
+  $('secondaryReason').value = '市场变化';
+  $('secondaryReasonDescription').value = '二级原因说明';
+  $('thirdReason').value = '其他';
+  $('thirdReasonDescription').value = '三级原因说明';
+  const periodSelect = $('reportPeriod');
+  if (periodSelect && periodSelect.options.length > 0) {
+    periodSelect.value = periodSelect.options[periodSelect.options.length - 1].value;
+  }
+}
+
+function fillReportForm(row) {
+  if (!row) return;
+  $('reportId').value = row.id || '';
+  const periodSelect = $('reportPeriod');
+  if (periodSelect && row.periodName) {
+    const matched = Array.from(periodSelect.options).find(option => option.textContent === row.periodName);
+    if (matched) {
+      periodSelect.value = matched.value;
+    }
+  }
+  if (row.archivedJobs !== undefined && row.archivedJobs !== null) $('archivedJobs').value = row.archivedJobs;
+  if (row.surveyJobs !== undefined && row.surveyJobs !== null) $('surveyJobs').value = row.surveyJobs;
+  if (row.otherReason) $('otherReason').value = row.otherReason;
+  if (row.decreaseType) $('decreaseType').value = row.decreaseType;
+  if (row.mainReason) $('mainReason').value = row.mainReason;
+  if (row.mainReasonDescription) $('mainReasonDescription').value = row.mainReasonDescription;
+  if (row.secondaryReason) $('secondaryReason').value = row.secondaryReason;
+  if (row.secondaryReasonDescription) $('secondaryReasonDescription').value = row.secondaryReasonDescription;
+  if (row.thirdReason) $('thirdReason').value = row.thirdReason;
+  if (row.thirdReasonDescription) $('thirdReasonDescription').value = row.thirdReasonDescription;
+  $('loginStatus').textContent = `已回填报表 ${row.id}，可继续修改后保存或提交`;
+}
+
+function resetNoticeForm() {
+  $('noticeId').value = '';
+  $('noticeTitle').value = '业务通知';
+  $('noticeCities').value = '昆明市';
+  $('noticeContent').value = '请按时填报数据。';
+  $('noticePublishMode').value = 'true';
+}
+
 function escapeHtml(text) {
   return String(text)
     .replaceAll('&', '&amp;')
@@ -343,6 +410,13 @@ async function refreshDashboard() {
   const options = periods.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   $('leftPeriod').innerHTML = options;
   $('rightPeriod').innerHTML = options;
+  const reportPeriod = $('reportPeriod');
+  if (reportPeriod) {
+    reportPeriod.innerHTML = options;
+    if (!reportPeriod.value && periods.length > 0) {
+      reportPeriod.value = String(periods[periods.length - 1].id);
+    }
+  }
   await loadNoticesPage(1);
   await loadEnterprisesPage(1);
   await loadMyReportsPage(1);
@@ -480,7 +554,7 @@ async function loadMyReportsPage(page) {
   params.set('page', String(state.myReportPage));
   params.set('size', String(state.myReportSize));
   const data = await request(`/api/reports/page?${params.toString()}`);
-  renderList($('myReports'), data.items || [], '暂无我的报表');
+  renderMyReportRows($('myReports'), data.items || []);
   renderPager('myReport', data);
 }
 
@@ -740,22 +814,26 @@ async function saveEnterprise(submit) {
 }
 
 async function saveReport(submit) {
-  const periods = await request('/api/periods');
-  const currentPeriod = periods[periods.length - 1];
+  const periodId = Number($('reportPeriod').value || 0);
+  if (!periodId) {
+    throw new Error('请选择调查期');
+  }
   const body = {
-    periodId: currentPeriod.id,
+    reportId: $('reportId').value ? Number($('reportId').value) : null,
+    periodId,
     archivedJobs: Number($('archivedJobs').value),
     surveyJobs: Number($('surveyJobs').value),
     otherReason: $('otherReason').value,
     decreaseType: $('decreaseType').value,
     mainReason: $('mainReason').value,
     mainReasonDescription: $('mainReasonDescription').value,
-    secondaryReason: '市场变化',
-    secondaryReasonDescription: '二级原因说明',
-    thirdReason: '其他',
-    thirdReasonDescription: '三级原因说明'
+    secondaryReason: $('secondaryReason').value,
+    secondaryReasonDescription: $('secondaryReasonDescription').value,
+    thirdReason: $('thirdReason').value,
+    thirdReasonDescription: $('thirdReasonDescription').value
   };
   const data = await request(`/api/reports/save?submit=${submit}`, { method: 'POST', body: JSON.stringify(body) });
+  $('reportId').value = data.id;
   $('loginStatus').textContent = `报表${submit ? '提交' : '保存'}成功：${data.status}`;
   await refreshDashboard();
 }
@@ -814,14 +892,17 @@ async function provinceBatchProcess(approved) {
 }
 
 async function saveNotice() {
+  const publishNow = $('noticePublishMode').value !== 'false';
   const body = {
+    noticeId: $('noticeId').value ? Number($('noticeId').value) : null,
     title: $('noticeTitle').value,
     content: $('noticeContent').value,
     appliesToAll: false,
     targetCities: $('noticeCities').value.split(',').map(v => v.trim()).filter(Boolean)
   };
-  await request('/api/notices/save?publishNow=true', { method: 'POST', body: JSON.stringify(body) });
-  $('loginStatus').textContent = '通知发布成功';
+  const data = await request(`/api/notices/save?publishNow=${publishNow}`, { method: 'POST', body: JSON.stringify(body) });
+  $('noticeId').value = data.id;
+  $('loginStatus').textContent = publishNow ? '通知发布成功' : '通知草稿已保存';
   await refreshDashboard();
 }
 
@@ -1182,6 +1263,21 @@ function bindProvinceNoticeSelection() {
   });
 }
 
+function bindMyReportSelection() {
+  const container = $('myReports');
+  if (!container) return;
+  container.addEventListener('click', (event) => {
+    const button = event.target.closest('.select-my-report-btn');
+    if (!button) return;
+    const id = Number(button.dataset.reportId || 0);
+    if (!id) return;
+    const rows = JSON.parse(container.dataset.items || '[]');
+    const row = rows.find(item => Number(item.id) === id);
+    if (!row) return;
+    fillReportForm(row);
+  });
+}
+
 function bindSessionSelection() {
   const container = $('sessionsResult');
   if (!container) return;
@@ -1203,6 +1299,7 @@ function bindActions() {
   $('submitEnterpriseBtn').addEventListener('click', () => saveEnterprise(true));
   $('saveReportBtn').addEventListener('click', () => saveReport(false));
   $('submitReportBtn').addEventListener('click', () => saveReport(true));
+  $('clearReportBtn').addEventListener('click', resetReportForm);
   $('loadCityReportsBtn').addEventListener('click', loadCityReports);
   $('cityApproveBtn').addEventListener('click', () => cityProcess(true));
   $('cityRejectBtn').addEventListener('click', () => cityProcess(false));
@@ -1212,6 +1309,7 @@ function bindActions() {
   $('provinceBatchApproveBtn').addEventListener('click', () => provinceBatchProcess(true));
   $('provinceBatchRejectBtn').addEventListener('click', () => provinceBatchProcess(false));
   $('saveNoticeBtn').addEventListener('click', saveNotice);
+  $('clearNoticeBtn').addEventListener('click', resetNoticeForm);
   $('createUserBtn').addEventListener('click', createUser);
   $('savePeriodBtn').addEventListener('click', savePeriod);
   $('reviewEnterpriseBtn').addEventListener('click', () => provinceAction('enterprise'));
@@ -1278,5 +1376,6 @@ function bindActions() {
 bindTabs();
 bindUserSelection();
 bindProvinceNoticeSelection();
+bindMyReportSelection();
 bindSessionSelection();
 bindActions();
