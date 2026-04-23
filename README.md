@@ -1,69 +1,123 @@
-# 就业数据采集系统 / Employment Data Collection System
+# 云南省企业就业失业数据采集系统
 
-软件项目管理大作业 — 就业数据采集与管理平台
+企业就业失业数据采集与审核平台，支持企业填报、市级审核、省级审核、通知公告、统计分析与导出。
 
-A bilingual (Chinese/English) web application for collecting and managing employment data.
+## 1. 核心功能
 
-## Features / 功能
+- 企业备案与信息维护
+- 企业调查期数据填报、提交与退回重报
+- 市级审核、批量审核
+- 省级审核、批量审核、代填修正
+- 通知管理与定向发布
+- 系统日志、在线会话与系统参数管理
+- 统计分析（汇总/取样/对比/趋势/监控）与 CSV/Excel/XML/JSON 导出
 
-- **Dashboard / 首页** — Statistics overview: total records, companies, average salary, employment type distribution, and industry bar chart
-- **Add Record / 添加数据** — Form to add a new employment record with validation
-- **View / Search / Filter / 数据列表** — Table of all records with search by name/company/position, filter by industry and employment type
-- **Export CSV / 导出** — Download filtered data as a CSV file (BOM-encoded for Excel)
-- **Delete / 删除** — Remove individual records
+## 2. 填报周期规则（最新）
 
-## Tech Stack / 技术栈
+- 1-3月执行半月报：
+    - 上半月：1日-15日
+    - 下半月：16日-月末
+- 4-12月执行整月报：
+    - 每月1日-月末
 
-- **Backend**: Python 3 + Flask + Flask-SQLAlchemy
-- **Database**: SQLite (file: `instance/employment.db`)
-- **Frontend**: Bootstrap 5.3 + Chart.js + Jinja2 templates
+系统已在调查期管理中对该规则进行校验，不符合规则的调查期将被拒绝保存。
 
-## Quick Start / 快速开始
+## 3. 技术栈
 
-```bash
-# Install dependencies
-pip install flask flask-sqlalchemy
+- Java 17
+- Spring Boot 3.3.5（Web / JPA / Validation / WebSocket / Thymeleaf）
+- Flyway
+- H2（默认）/ MySQL（可切换）
+- Apache POI（Excel导出）
+- 前端：原生 HTML/CSS/JS + Chart.js
 
-# Run the app (database is auto-created on first launch)
-python app.py
-# Open http://localhost:5000 in your browser
+## 4. 项目结构
+
+```text
+src/
+├── main/
+│   ├── java/com/yunnan/datacollect/
+│   │   ├── service/            # 核心业务逻辑
+│   │   ├── web/                # API控制器与WebSocket
+│   │   └── repository/         # JPA仓储
+│   └── resources/
+│       ├── application.properties
+│       ├── db/migration/       # Flyway脚本
+│       └── static/             # 前端静态页面
+├── pom.xml
+└── README.md
 ```
 
-Set `FLASK_DEBUG=1` for debug mode. Set `SECRET_KEY` env var in production.
+## 5. 环境要求
 
-## Running Tests / 运行测试
+- JDK 17+
+- Maven 3.9+
 
-```bash
-pip install pytest
-python -m pytest tests/ -v
+如果系统 Maven 不可用，可使用仓库内便携版：
+
+```powershell
+.\.tools\apache-maven-3.9.9\bin\mvn.cmd -v
 ```
 
-## Data Model / 数据模型
+## 6. 配置说明
 
-| Field | Type | Description |
-|-------|------|-------------|
-| name | str | 姓名 / Person name |
-| company | str | 公司 / Company name |
-| position | str | 职位 / Job title |
-| industry | str | 行业 / Industry |
-| location | str | 地点 / Work city |
-| salary | int (nullable) | 薪资 / Monthly salary (CNY) |
-| employment_type | str | 就业类型 / Full-time / Part-time / etc. |
-| education | str | 学历 / Degree level |
-| start_date | date (nullable) | 入职日期 / Start date |
-| created_at | datetime | 创建时间 / Record creation time |
+主要配置在 [main/resources/application.properties](main/resources/application.properties)。
 
-## Project Structure / 项目结构
+- 服务端口：8082
+- 默认数据库：H2 内存库
+- Flyway 默认关闭（通过环境变量开启）
 
+建议运行时开启 Flyway：
+
+```powershell
+$env:FLYWAY_ENABLED='true'
 ```
-employment-data-collect/
-├── app.py              # Flask application (routes, model, config)
-├── requirements.txt    # Python dependencies
-├── templates/
-│   ├── base.html       # Base template with Bootstrap navbar
-│   ├── index.html      # Dashboard with stats & chart
-│   ├── add.html        # Add record form
-│   └── list.html       # Records table with search/filter/export
-└── tests/
-    └── test_app.py     # Pytest test suite (16 tests)
+
+## 7. 本地启动
+
+### 7.1 构建
+
+```powershell
+.\.tools\apache-maven-3.9.9\bin\mvn.cmd -q -DskipTests package
 ```
+
+### 7.2 运行
+
+```powershell
+$env:FLYWAY_ENABLED='true'
+& "C:\Program Files\Java\jdk-24\bin\java.exe" -jar target\datacollect-1.0.0.jar
+```
+
+### 7.3 健康检查
+
+```text
+GET http://localhost:8082/api/health
+```
+
+返回示例：
+
+```json
+{"success":true,"message":"OK","data":{"status":"UP","time":"2026-04-23"}}
+```
+
+## 8. 默认账号（演示）
+
+- 省级：province_admin / P@ssw0rd1
+- 市级：kunming_city / P@ssw0rd1
+- 企业：alpha_corp / P@ssw0rd1
+
+## 9. 变更文档
+
+计划变更一（1-3月半月报、4-12月整月报）变更单见：
+
+- [main/docs/项目变更单_计划变更一_半月报调整.md](main/docs/%E9%A1%B9%E7%9B%AE%E5%8F%98%E6%9B%B4%E5%8D%95_%E8%AE%A1%E5%88%92%E5%8F%98%E6%9B%B4%E4%B8%80_%E5%8D%8A%E6%9C%88%E6%8A%A5%E8%B0%83%E6%95%B4.md)
+
+## 10. 常见问题
+
+1. 打包时报 Unable to rename ...jar to ...jar.original
+     - 原因：JAR 正在被运行中的 Java 进程占用。
+     - 处理：先停止占用进程，再执行 package。
+
+2. 启动时报表/用户表不存在
+     - 原因：Flyway 未启用，迁移脚本未执行。
+     - 处理：设置环境变量 FLYWAY_ENABLED=true 后重启。

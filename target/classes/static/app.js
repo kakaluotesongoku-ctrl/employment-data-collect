@@ -72,9 +72,13 @@ async function request(path, options = {}) {
   return payload.data;
 }
 
-async function downloadFile(path, filename) {
-  const headers = state.token ? { 'X-Auth-Token': state.token } : {};
-  const response = await fetch(path, { headers });
+async function downloadFile(path, filename, options = {}) {
+  const headers = Object.assign({}, options.headers || {});
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (state.token) headers['X-Auth-Token'] = state.token;
+  const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || `HTTP ${response.status}`);
@@ -864,6 +868,37 @@ async function exportSummaryCsv() {
   $('loginStatus').textContent = '汇总 CSV 已导出';
 }
 
+async function exportSamplingAnalysisCsv() {
+  await downloadFile('/api/sampling/export-csv', 'sampling.csv');
+  $('loginStatus').textContent = '取样分析 CSV 已导出';
+}
+
+async function exportComparisonAnalysisCsv() {
+  const body = {
+    leftPeriodId: Number($('leftPeriod').value),
+    rightPeriodId: Number($('rightPeriod').value),
+    dimensions: ['city'],
+    cityName: '',
+    enterpriseNature: '',
+    industry: ''
+  };
+  await downloadFile('/api/comparison/export-csv', 'comparison.csv', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '对比分析 CSV 已导出';
+}
+
+async function exportTrendAnalysisCsv() {
+  const periods = await request('/api/periods');
+  const body = {
+    periodIds: periods.slice(-3).map(p => p.id),
+    cityName: '',
+    enterpriseNature: '',
+    industry: '',
+    note: ['示例趋势说明']
+  };
+  await downloadFile('/api/trend/export-csv', 'trend.csv', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '趋势分析 CSV 已导出';
+}
+
 async function exportCustomReportsCsv() {
   const fields = $('customReportFields').value.trim();
   const params = new URLSearchParams();
@@ -979,12 +1014,53 @@ function periodsSelectValue() {
 async function showSummary() {
   const periodId = Number($('rightPeriod').value || 0) || undefined;
   const data = await request(`/api/summary${periodId ? `?periodId=${periodId}` : ''}`);
-  $('analysis').innerHTML = `<div class="item"><h4>汇总结果</h4><p>调查期：${data.periodName}</p><p>企业：${data.enterpriseCount}，建档期岗位：${data.archivedJobs}，调查期岗位：${data.surveyJobs}，变化率：${data.changeRatio.toFixed(2)}%</p></div>`;
+  state.analysisState = { type: 'summary', data, request: { periodId } };
+  clearAnalysisCharts();
+  setAnalysisSummary(`<div class="item"><h4>汇总结果</h4><p>调查期：${data.periodName}</p><p>企业：${data.enterpriseCount}，建档期岗位：${data.archivedJobs}，调查期岗位：${data.surveyJobs}，变化率：${data.changeRatio.toFixed(2)}%</p></div>`);
+  renderChart('analysis1', 'analysisChart', {
+    type: 'bar',
+    data: {
+      labels: ['建档期岗位', '调查期岗位', '岗位变化总数', '岗位减少总数'],
+      datasets: [{
+        label: data.periodName,
+        data: [data.archivedJobs, data.surveyJobs, data.jobChangeTotal, data.jobDecreaseTotal],
+        backgroundColor: ['#ffb347', '#5eead4', '#60a5fa', '#f87171']
+      }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+  });
+  const cityLabels = Object.keys(data.byCity || {});
+  renderChart('analysis2', 'analysisChart2', {
+    type: 'doughnut',
+    data: {
+      labels: cityLabels,
+      datasets: [{ data: cityLabels.map(city => data.byCity[city]), backgroundColor: ['#ffb347', '#5eead4', '#60a5fa', '#f87171', '#a78bfa', '#f59e0b'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 }
 
 async function showSampling() {
   const data = await request('/api/sampling');
-  $('analysis').innerHTML = `<div class="item"><h4>取样分析</h4><p>${data.rows.map(r => `${r.cityName}:${r.enterpriseCount}(${r.ratio.toFixed(2)}%)`).join('；')}</p></div>`;
+  state.analysisState = { type: 'sampling', data, request: {} };
+  clearAnalysisCharts();
+  setAnalysisSummary(`<div class="item"><h4>取样分析</h4><p>${data.rows.map(r => `${r.cityName}:${r.enterpriseCount}(${r.ratio.toFixed(2)}%)`).join('；')}</p></div>`);
+  renderChart('analysis1', 'analysisChart', {
+    type: 'pie',
+    data: {
+      labels: data.rows.map(r => r.cityName),
+      datasets: [{ data: data.rows.map(r => r.enterpriseCount), backgroundColor: ['#ffb347', '#5eead4', '#60a5fa', '#f87171', '#a78bfa', '#f59e0b'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+  renderChart('analysis2', 'analysisChart2', {
+    type: 'bar',
+    data: {
+      labels: data.rows.map(r => r.cityName),
+      datasets: [{ label: '占比(%)', data: data.rows.map(r => Number(r.ratio.toFixed(2))), backgroundColor: '#5eead4' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+  });
 }
 
 async function compare() {
@@ -997,7 +1073,31 @@ async function compare() {
     industry: ''
   };
   const data = await request('/api/comparison', { method: 'POST', body: JSON.stringify(body) });
-  $('analysis').innerHTML = `<div class="item"><h4>对比分析</h4><p>${data.rows.map(r => `${r.groupKey}: ${r.leftSurveyJobs} → ${r.rightSurveyJobs}`).join('；')}</p></div>`;
+  state.analysisState = { type: 'comparison', data, request: body };
+  clearAnalysisCharts();
+  setAnalysisSummary(`<div class="item"><h4>对比分析</h4><p>${data.rows.map(r => `${r.groupKey}: ${r.leftSurveyJobs} → ${r.rightSurveyJobs}`).join('；')}</p></div>`);
+  renderChart('analysis1', 'analysisChart', {
+    type: 'bar',
+    data: {
+      labels: data.rows.map(r => r.groupKey),
+      datasets: [
+        { label: data.leftPeriodName, data: data.rows.map(r => r.leftSurveyJobs), backgroundColor: '#ffb347' },
+        { label: data.rightPeriodName, data: data.rows.map(r => r.rightSurveyJobs), backgroundColor: '#5eead4' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+  renderChart('analysis2', 'analysisChart2', {
+    type: 'bar',
+    data: {
+      labels: data.rows.map(r => r.groupKey),
+      datasets: [
+        { label: '左侧变化', data: data.rows.map(r => r.leftChangeJobs), backgroundColor: '#f59e0b' },
+        { label: '右侧变化', data: data.rows.map(r => r.rightChangeJobs), backgroundColor: '#60a5fa' }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 }
 
 async function trend() {
@@ -1010,12 +1110,32 @@ async function trend() {
     note: ['示例趋势说明']
   };
   const data = await request('/api/trend', { method: 'POST', body: JSON.stringify(body) });
-  $('analysis').innerHTML = `<div class="item"><h4>趋势分析</h4><p>${data.rows.map(r => `${r.periodName}:${r.changeRatio.toFixed(2)}%`).join('；')}</p></div>`;
+  state.analysisState = { type: 'trend', data, request: body };
+  clearAnalysisCharts();
+  setAnalysisSummary(`<div class="item"><h4>趋势分析</h4><p>${data.rows.map(r => `${r.periodName}:${r.changeRatio.toFixed(2)}%`).join('；')}</p></div>`);
+  renderChart('analysis1', 'analysisChart', {
+    type: 'line',
+    data: {
+      labels: data.rows.map(r => r.periodName),
+      datasets: [{ label: '变化率(%)', data: data.rows.map(r => Number(r.changeRatio.toFixed(2))), borderColor: '#ffb347', backgroundColor: 'rgba(255,179,71,.15)', tension: 0.3, fill: true }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
+  renderChart('analysis2', 'analysisChart2', {
+    type: 'line',
+    data: {
+      labels: data.rows.map(r => r.periodName),
+      datasets: [{ label: '环比增长率(%)', data: data.rows.map(r => r.ringRatio == null ? null : Number(r.ringRatio.toFixed(2))), borderColor: '#5eead4', backgroundColor: 'rgba(94,234,212,.15)', tension: 0.3, spanGaps: true, fill: true }]
+    },
+    options: { responsive: true, maintainAspectRatio: false }
+  });
 }
 
 async function monitor() {
   const data = await request('/api/monitor');
-  $('analysis').innerHTML = `<div class="item"><h4>系统监控</h4><p>CPU：${data.processors} 核，已用内存：${Math.round(data.usedMemory / 1024 / 1024)} MB，最大内存：${Math.round(data.maxMemory / 1024 / 1024)} MB，在线会话：${data.activeSessions}</p></div>`;
+  state.analysisState = { type: 'monitor', data, request: {} };
+  clearAnalysisCharts();
+  setAnalysisSummary(`<div class="item"><h4>系统监控</h4><p>CPU：${data.processors} 核，已用内存：${Math.round(data.usedMemory / 1024 / 1024)} MB，最大内存：${Math.round(data.maxMemory / 1024 / 1024)} MB，在线会话：${data.activeSessions}</p></div>`);
 }
 
 function bindTabs() {
@@ -1105,6 +1225,10 @@ function bindActions() {
   $('exportReportsCsvBtn').addEventListener('click', exportReportsCsv);
   $('exportEnterprisesCsvBtn').addEventListener('click', exportEnterprisesCsv);
   $('exportSummaryCsvBtn').addEventListener('click', exportSummaryCsv);
+  $('exportSummaryAnalysisBtn').addEventListener('click', exportSummaryCsv);
+  $('exportSamplingAnalysisBtn').addEventListener('click', exportSamplingAnalysisCsv);
+  $('exportComparisonAnalysisBtn').addEventListener('click', exportComparisonAnalysisCsv);
+  $('exportTrendAnalysisBtn').addEventListener('click', exportTrendAnalysisCsv);
   $('exportCustomReportsBtn').addEventListener('click', exportCustomReportsCsv);
   $('exportCustomEnterprisesBtn').addEventListener('click', exportCustomEnterprisesCsv);
   $('searchNoticesBtn').addEventListener('click', searchNotices);

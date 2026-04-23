@@ -1049,6 +1049,7 @@ public class PlatformService {
         period.endDate = requireDate(request.endDate(), "结束时间不能为空");
         period.submissionStart = requireDate(request.submissionStart(), "填报开始时间不能为空");
         period.submissionEnd = requireDate(request.submissionEnd(), "填报结束时间不能为空");
+        validatePeriodPlanRule(period.startDate, period.endDate);
         period.active = request.active();
         period.updatedAt = Instant.now();
         persistState();
@@ -1624,6 +1625,33 @@ public class PlatformService {
         return LocalDate.parse(value.trim(), DATE_FMT);
     }
 
+    private void validatePeriodPlanRule(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null) {
+            return;
+        }
+        if (endDate.isBefore(startDate)) {
+            throw badRequest("调查期结束日期不能早于开始日期");
+        }
+        if (startDate.getYear() != endDate.getYear() || startDate.getMonthValue() != endDate.getMonthValue()) {
+            throw badRequest("调查期必须位于同一自然月内");
+        }
+        int month = startDate.getMonthValue();
+        int startDay = startDate.getDayOfMonth();
+        int endDay = endDate.getDayOfMonth();
+        int monthEndDay = startDate.lengthOfMonth();
+        if (month <= 3) {
+            boolean upperHalf = startDay == 1 && endDay == 15;
+            boolean lowerHalf = startDay == 16 && endDay == monthEndDay;
+            if (!upperHalf && !lowerHalf) {
+                throw badRequest("1-3月需按半月报配置：上半月(1-15)或下半月(16-月末)");
+            }
+            return;
+        }
+        if (startDay != 1 || endDay != monthEndDay) {
+            throw badRequest("4-12月需按整月报配置：每月1日至月末");
+        }
+    }
+
     private String nvl(String value, String fallback, String defaultValue) {
         if (value != null && !value.isBlank()) {
             return value.trim();
@@ -1798,9 +1826,9 @@ public class PlatformService {
     }
 
     private void seedReports() {
-        createSeedReport("alpha_corp", "2026年1月调查期", 120, 114, ReportStatus.PROVINCE_APPROVED, "昆明市");
-        createSeedReport("alpha_corp", "2026年2月调查期", 118, 112, ReportStatus.PENDING_CITY_REVIEW, "昆明市");
-        createSeedReport("beta_corp", "2026年2月调查期", 90, 88, ReportStatus.PENDING_PROVINCE_REVIEW, "玉溪市");
+        createSeedReport("alpha_corp", "2026年1月上半月调查期", 120, 114, ReportStatus.PROVINCE_APPROVED, "昆明市");
+        createSeedReport("alpha_corp", "2026年1月下半月调查期", 118, 112, ReportStatus.PENDING_CITY_REVIEW, "昆明市");
+        createSeedReport("beta_corp", "2026年2月上半月调查期", 90, 88, ReportStatus.PENDING_PROVINCE_REVIEW, "玉溪市");
     }
 
     private void createSeedReport(String username, String periodName, int archived, int survey, ReportStatus status, String cityName) {
@@ -1823,10 +1851,31 @@ public class PlatformService {
     }
 
     private void seedPeriods() {
-        createPeriod("2026年1月调查期", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 20), true);
-        createPeriod("2026年2月调查期", LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28), LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 20), true);
-        createPeriod("2026年3月调查期", LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 20), true);
-        createPeriod("2026年4月调查期", LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 20), true);
+        int year = 2026;
+        for (int month = 1; month <= 12; month++) {
+            if (month <= 3) {
+                createHalfMonthPeriods(year, month, true);
+            } else {
+                createFullMonthPeriod(year, month, true);
+            }
+        }
+    }
+
+    private void createHalfMonthPeriods(int year, int month, boolean active) {
+        LocalDate monthStart = LocalDate.of(year, month, 1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        LocalDate mid = LocalDate.of(year, month, 15);
+        createPeriod(String.format(Locale.ROOT, "%d年%d月上半月调查期", year, month),
+                monthStart, mid, monthStart, mid, active);
+        createPeriod(String.format(Locale.ROOT, "%d年%d月下半月调查期", year, month),
+                mid.plusDays(1), monthEnd, mid.plusDays(1), monthEnd, active);
+    }
+
+    private void createFullMonthPeriod(int year, int month, boolean active) {
+        LocalDate monthStart = LocalDate.of(year, month, 1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+        createPeriod(String.format(Locale.ROOT, "%d年%d月调查期", year, month),
+                monthStart, monthEnd, monthStart, monthEnd, active);
     }
 
     private void createPeriod(String name, LocalDate start, LocalDate end, LocalDate submitStart, LocalDate submitEnd, boolean active) {
@@ -1843,7 +1892,7 @@ public class PlatformService {
     }
 
     private void seedNotices() {
-        createNoticeSeed("2026年度上报安排", "请各企业按时完成月度数据填报。", true, List.of("昆明市", "玉溪市"), Role.PROVINCE, "province_admin");
+        createNoticeSeed("2026年度上报安排", "1-3月执行半月报（上半月/下半月各1次），4-12月执行整月报，请按期完成填报。", true, List.of("昆明市", "玉溪市"), Role.PROVINCE, "province_admin");
         createNoticeSeed("昆明市补充通知", "请本市企业尽快完成2月报送。", false, List.of("昆明市"), Role.CITY, "kunming_city");
     }
 
