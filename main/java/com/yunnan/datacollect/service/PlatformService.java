@@ -12,6 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -472,6 +473,11 @@ public class PlatformService {
         report.updatedAt = Instant.now();
         log("REPORT_SUBMIT", "REPORT", report.id, "数据正式提交", account.id, currentIp(account));
         persistState();
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("reportId", report.id);
+        payload.put("periodId", report.periodId);
+        payload.put("submit", true);
+        emit("REPORT_SAVE", payload, reportAudience(report));
         return MonthlyReportView.from(report);
     }
 

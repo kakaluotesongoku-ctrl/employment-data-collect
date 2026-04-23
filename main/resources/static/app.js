@@ -24,7 +24,11 @@ const state = {
   userSize: 8,
   userQuery: { keyword: '', role: '', city: '', enabled: '' },
   myReportPage: 1,
-  myReportSize: 5
+  myReportSize: 5,
+  realtimeRefreshTimer: null,
+  realtimeRefreshDelay: 500,
+  pendingRealtimeScopes: new Set(),
+  realtimeRefreshing: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -107,6 +111,103 @@ function setWsStatus(text) {
   if (status) status.textContent = text;
 }
 
+function queueRealtimeRefresh(scopes) {
+  const scopeList = Array.isArray(scopes) ? scopes : [scopes];
+  scopeList.filter(Boolean).forEach(scope => state.pendingRealtimeScopes.add(scope));
+  if (state.realtimeRefreshTimer) {
+    return;
+  }
+  state.realtimeRefreshTimer = setTimeout(() => {
+    state.realtimeRefreshTimer = null;
+    runRealtimeRefresh().catch(() => {});
+  }, state.realtimeRefreshDelay);
+}
+
+async function refreshRealtimeOverview() {
+  const data = await request('/api/dashboard');
+  state.dashboard = data;
+  state.user = data.user;
+  $('currentUserName').textContent = data.user.username;
+  $('currentUserRole').textContent = `${data.user.role} · ${data.user.cityName || ''}`;
+  renderStats(data.summary, data.sampling, data.monitor);
+  renderList($('reports'), data.reports || [], '暂无报表');
+}
+
+async function runRealtimeRefresh() {
+  if (state.realtimeRefreshing) {
+    return;
+  }
+  state.realtimeRefreshing = true;
+  const scopes = Array.from(state.pendingRealtimeScopes);
+  state.pendingRealtimeScopes.clear();
+  try {
+    if (scopes.includes('overview')) {
+      await refreshRealtimeOverview();
+    }
+    if (scopes.includes('myReports') && state.user?.role === 'ENTERPRISE') {
+      await loadMyReportsPage(state.myReportPage || 1);
+    }
+    if (scopes.includes('cityReports') && state.user?.role === 'CITY') {
+      await loadCityReports();
+    }
+    if (scopes.includes('provinceReports') && state.user?.role === 'PROVINCE') {
+      await loadProvinceReports();
+    }
+    if (scopes.includes('notices')) {
+      await loadNoticesPage(state.noticePage || 1);
+    }
+    if (scopes.includes('provinceNotices') && state.user?.role === 'PROVINCE') {
+      await loadProvinceNoticesPage(state.provinceNoticePage || 1);
+    }
+    if (scopes.includes('enterprises') && state.user?.role !== 'ENTERPRISE') {
+      await loadEnterprisesPage(state.enterprisePage || 1);
+    }
+    if (scopes.includes('users') && state.user?.role === 'PROVINCE') {
+      await loadUsersPage(state.userPage || 1);
+    }
+    if (scopes.includes('logs') && state.user?.role === 'PROVINCE') {
+      await loadLogsPage(state.logPage || 1);
+    }
+    if (scopes.includes('settings') && state.user?.role === 'PROVINCE') {
+      await loadSystemSettings();
+      await loadSessions();
+    }
+  } finally {
+    state.realtimeRefreshing = false;
+    if (state.pendingRealtimeScopes.size > 0) {
+      queueRealtimeRefresh([]);
+    }
+  }
+}
+
+function handleRealtimeEvent(message) {
+  const type = message?.type;
+  const role = state.user?.role;
+  if (!type || type === 'connected' || type === 'echo') {
+    return;
+  }
+  const scopes = ['overview'];
+  if (type === 'REPORT_SAVE' || type === 'CITY_REVIEW' || type === 'PROVINCE_REVIEW' || type === 'PROVINCE_CORRECT') {
+    if (role === 'ENTERPRISE') scopes.push('myReports');
+    if (role === 'CITY') scopes.push('cityReports');
+    if (role === 'PROVINCE') scopes.push('provinceReports');
+  }
+  if (type === 'NOTICE_SAVE' || type === 'NOTICE_DELETE') {
+    scopes.push('notices');
+    if (role === 'PROVINCE') scopes.push('provinceNotices');
+  }
+  if (type === 'ENTERPRISE_SAVE' || type === 'ENTERPRISE_REVIEW') {
+    if (role !== 'ENTERPRISE') scopes.push('enterprises');
+  }
+  if (type === 'LOGIN' || type === 'LOGOUT' || type === 'PASSWORD_CHANGE' || type === 'PASSWORD_RESET') {
+    if (role === 'PROVINCE') scopes.push('users', 'logs');
+  }
+  if (type === 'SYSTEM_SETTINGS_UPDATE' || type === 'SESSION_FORCE_LOGOUT') {
+    if (role === 'PROVINCE') scopes.push('settings');
+  }
+  queueRealtimeRefresh(scopes);
+}
+
 function connectWebSocket() {
   if (!state.token) {
     $('loginStatus').textContent = '请先登录后再连接推送';
@@ -139,9 +240,7 @@ function connectWebSocket() {
       const message = JSON.parse(event.data);
       $('wsLastEvent').textContent = message.type || '-';
       appendFeed(message);
-      if (message.type && message.type !== 'echo') {
-        refreshDashboard().catch(() => {});
-      }
+      handleRealtimeEvent(message);
     } catch {
       appendFeed({ type: 'raw', payload: { text: event.data } });
     }
@@ -157,6 +256,11 @@ function disconnectWebSocket() {
     clearTimeout(state.wsRetryTimer);
     state.wsRetryTimer = null;
   }
+  if (state.realtimeRefreshTimer) {
+    clearTimeout(state.realtimeRefreshTimer);
+    state.realtimeRefreshTimer = null;
+  }
+  state.pendingRealtimeScopes.clear();
   setWsStatus('未连接');
 }
 
@@ -420,7 +524,11 @@ async function refreshDashboard() {
   await loadNoticesPage(1);
   await loadEnterprisesPage(1);
   await loadMyReportsPage(1);
+  if (data.user.role === 'CITY' || data.user.role === 'PROVINCE') {
+    await loadCityReports();
+  }
   if (data.user.role === 'PROVINCE') {
+    await loadProvinceReports();
     await loadUsersPage(1);
     await loadLogsPage(1);
     await loadProvinceNoticesPage(1);
@@ -1225,7 +1333,18 @@ function bindTabs() {
       document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(item => item.classList.remove('active'));
       tab.classList.add('active');
-      $(`tab-${tab.dataset.tab}`).classList.add('active');
+      const tabName = tab.dataset.tab;
+      $(`tab-${tabName}`).classList.add('active');
+      if ((tabName === 'city' || tabName === 'province') && state.user?.role !== 'ENTERPRISE') {
+        loadCityReports().catch(error => {
+          $('loginStatus').textContent = error.message;
+        });
+      }
+      if (tabName === 'province' && state.user?.role === 'PROVINCE') {
+        loadProvinceReports().catch(error => {
+          $('loginStatus').textContent = error.message;
+        });
+      }
     });
   });
 }
