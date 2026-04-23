@@ -7,6 +7,9 @@ const state = {
   noticePage: 1,
   noticeSize: 5,
   noticeQuery: { keyword: '', createdFrom: '', createdTo: '' },
+  provinceNoticePage: 1,
+  provinceNoticeSize: 6,
+  provinceNoticeQuery: { keyword: '', status: '', createdFrom: '', createdTo: '' },
   enterprisePage: 1,
   enterpriseSize: 5,
   enterpriseQuery: { keyword: '', city: '', nature: '', industry: '' },
@@ -223,6 +226,24 @@ function renderLogRows(target, rows) {
   `).join('');
 }
 
+function renderProvinceNoticeRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无通知数据</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `
+    <div class="item">
+      <h4>${escapeHtml(row.title || '-')}</h4>
+      <p>ID:${row.id} · 状态:${escapeHtml(row.status || '-')} · 发布人:${escapeHtml(row.publisherName || '-')}</p>
+      <p>适用范围:${row.appliesToAll ? '全省' : escapeHtml((row.targetCities || []).join(','))} · 时间:${escapeHtml(row.createdAt || '-')}</p>
+      <p>${escapeHtml(row.content || '-')}</p>
+      <div class="actions">
+        <button class="ghost select-province-notice-btn" data-notice-id="${row.id}">选中编辑</button>
+      </div>
+    </div>
+  `).join('');
+}
+
 function renderPager(prefix, pageData) {
   const label = $(`${prefix}PageInfo`);
   const prevBtn = $(`${prefix}PrevBtn`);
@@ -264,6 +285,7 @@ async function refreshDashboard() {
   if (data.user.role === 'PROVINCE') {
     await loadUsersPage(1);
     await loadLogsPage(1);
+    await loadProvinceNoticesPage(1);
   }
 }
 
@@ -428,6 +450,69 @@ async function loadLogsPage(page) {
   const data = await request(`/api/logs/page?${params.toString()}`);
   renderLogRows($('logsResult'), data.items || []);
   renderPager('log', data);
+}
+
+async function searchProvinceNotices() {
+  state.provinceNoticeQuery.keyword = $('provinceNoticeKeyword').value.trim();
+  state.provinceNoticeQuery.status = $('provinceNoticeStatus').value;
+  state.provinceNoticeQuery.createdFrom = $('provinceNoticeFrom').value;
+  state.provinceNoticeQuery.createdTo = $('provinceNoticeTo').value;
+  await loadProvinceNoticesPage(1);
+}
+
+async function clearProvinceNoticeFilter() {
+  $('provinceNoticeKeyword').value = '';
+  $('provinceNoticeStatus').value = '';
+  $('provinceNoticeFrom').value = '';
+  $('provinceNoticeTo').value = '';
+  state.provinceNoticeQuery = { keyword: '', status: '', createdFrom: '', createdTo: '' };
+  await loadProvinceNoticesPage(1);
+}
+
+async function loadProvinceNoticesPage(page) {
+  if (!state.user || state.user.role !== 'PROVINCE') {
+    return;
+  }
+  state.provinceNoticePage = page;
+  const params = new URLSearchParams();
+  if (state.provinceNoticeQuery.keyword) params.set('keyword', state.provinceNoticeQuery.keyword);
+  if (state.provinceNoticeQuery.status) params.set('status', state.provinceNoticeQuery.status);
+  if (state.provinceNoticeQuery.createdFrom) params.set('createdFrom', state.provinceNoticeQuery.createdFrom);
+  if (state.provinceNoticeQuery.createdTo) params.set('createdTo', state.provinceNoticeQuery.createdTo);
+  params.set('page', String(state.provinceNoticePage));
+  params.set('size', String(state.provinceNoticeSize));
+  const data = await request(`/api/notices?${params.toString()}`);
+  renderProvinceNoticeRows($('provinceNotices'), data.items || []);
+  renderPager('provinceNotice', data);
+}
+
+async function saveProvinceNotice(publishNow) {
+  const idRaw = $('provinceNoticeId').value;
+  const body = {
+    noticeId: idRaw ? Number(idRaw) : null,
+    title: $('provinceNoticeTitle').value,
+    content: $('provinceNoticeContent').value,
+    appliesToAll: false,
+    targetCities: $('provinceNoticeCities').value.split(',').map(v => v.trim()).filter(Boolean)
+  };
+  const data = await request(`/api/notices/save?publishNow=${publishNow}`, { method: 'POST', body: JSON.stringify(body) });
+  $('provinceNoticeId').value = data.id;
+  $('loginStatus').textContent = publishNow ? '省级通知发布成功' : '省级通知草稿已保存';
+  await loadProvinceNoticesPage(state.provinceNoticePage);
+}
+
+async function deleteProvinceNotice() {
+  const id = Number($('provinceNoticeId').value || 0);
+  if (!id) throw new Error('请先选择要删除的通知');
+  await request(`/api/notices/${id}/delete`, { method: 'POST' });
+  $('loginStatus').textContent = '省级通知已删除';
+  $('provinceNoticeId').value = '';
+  await loadProvinceNoticesPage(state.provinceNoticePage);
+}
+
+async function exportProvinceNotices() {
+  await downloadFile('/api/dashboard/export/notices', 'notices.xlsx');
+  $('loginStatus').textContent = '通知 Excel 已导出';
 }
 
 async function exportLogsCsv() {
@@ -850,6 +935,24 @@ function bindUserSelection() {
   });
 }
 
+function bindProvinceNoticeSelection() {
+  const container = $('provinceNotices');
+  if (!container) return;
+  container.addEventListener('click', async (event) => {
+    const button = event.target.closest('.select-province-notice-btn');
+    if (!button) return;
+    const id = Number(button.dataset.noticeId || 0);
+    if (!id) return;
+    const data = await request(`/api/notices?page=1&size=1&keyword=${id}`);
+    const row = (data.items || []).find(item => item.id === id);
+    if (!row) return;
+    $('provinceNoticeId').value = row.id;
+    $('provinceNoticeTitle').value = row.title || '';
+    $('provinceNoticeContent').value = row.content || '';
+    $('provinceNoticeCities').value = (row.targetCities || []).join(',');
+  });
+}
+
 function bindActions() {
   $('loginBtn').addEventListener('click', login);
   $('logoutBtn').addEventListener('click', logout);
@@ -905,6 +1008,14 @@ function bindActions() {
   $('logPrevBtn').addEventListener('click', () => loadLogsPage(Math.max(1, state.logPage - 1)));
   $('logNextBtn').addEventListener('click', () => loadLogsPage(state.logPage + 1));
   $('exportLogsBtn').addEventListener('click', exportLogsCsv);
+  $('searchProvinceNoticesBtn').addEventListener('click', searchProvinceNotices);
+  $('clearProvinceNoticesBtn').addEventListener('click', clearProvinceNoticeFilter);
+  $('provinceNoticePrevBtn').addEventListener('click', () => loadProvinceNoticesPage(Math.max(1, state.provinceNoticePage - 1)));
+  $('provinceNoticeNextBtn').addEventListener('click', () => loadProvinceNoticesPage(state.provinceNoticePage + 1));
+  $('saveProvinceNoticeDraftBtn').addEventListener('click', () => saveProvinceNotice(false));
+  $('publishProvinceNoticeBtn').addEventListener('click', () => saveProvinceNotice(true));
+  $('deleteProvinceNoticeBtn').addEventListener('click', deleteProvinceNotice);
+  $('exportProvinceNoticesBtn').addEventListener('click', exportProvinceNotices);
   $('myReportPrevBtn').addEventListener('click', () => loadMyReportsPage(Math.max(1, state.myReportPage - 1)));
   $('myReportNextBtn').addEventListener('click', () => loadMyReportsPage(state.myReportPage + 1));
   $('showSummaryBtn').addEventListener('click', showSummary);
@@ -919,4 +1030,5 @@ function bindActions() {
 
 bindTabs();
 bindUserSelection();
+bindProvinceNoticeSelection();
 bindActions();

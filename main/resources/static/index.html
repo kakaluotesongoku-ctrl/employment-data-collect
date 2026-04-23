@@ -303,6 +303,41 @@
           <button class="ghost" id="exportCustomEnterprisesBtn">导出自定义企业 CSV</button>
         </div>
         <div class="divider"></div>
+        <h4>通知管理（省级）</h4>
+        <div class="grid four">
+          <label>标题关键字<input id="provinceNoticeKeyword" placeholder="按标题搜索" /></label>
+          <label>状态
+            <select id="provinceNoticeStatus">
+              <option value="">全部</option>
+              <option value="ACTIVE">有效</option>
+              <option value="DRAFT">草稿</option>
+              <option value="DELETED">已删除</option>
+            </select>
+          </label>
+          <label>开始日期<input id="provinceNoticeFrom" type="date" /></label>
+          <label>结束日期<input id="provinceNoticeTo" type="date" /></label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="searchProvinceNoticesBtn">查询通知</button>
+          <button class="ghost" id="clearProvinceNoticesBtn">清空条件</button>
+          <button class="ghost" id="provinceNoticePrevBtn">上一页</button>
+          <button class="ghost" id="provinceNoticeNextBtn">下一页</button>
+          <button class="ghost" id="exportProvinceNoticesBtn">导出通知 Excel</button>
+          <span class="pager-info" id="provinceNoticePageInfo">第 1/1 页，共 0 条</span>
+        </div>
+        <div id="provinceNotices" class="list"></div>
+        <div class="grid three">
+          <label>通知ID（编辑时自动填充）<input id="provinceNoticeId" type="number" placeholder="新建可留空" /></label>
+          <label>通知标题<input id="provinceNoticeTitle" value="省级业务通知" /></label>
+          <label>适用地区（英文逗号分隔）<input id="provinceNoticeCities" value="昆明市,玉溪市" /></label>
+        </div>
+        <label>通知内容<textarea id="provinceNoticeContent" rows="4">请各市按时完成审核与上报。</textarea></label>
+        <div class="actions wrap">
+          <button class="ghost" id="saveProvinceNoticeDraftBtn">保存草稿</button>
+          <button class="ghost" id="publishProvinceNoticeBtn">发布/更新通知</button>
+          <button class="ghost" id="deleteProvinceNoticeBtn">删除通知</button>
+        </div>
+        <div class="divider"></div>
         <h4>实时推送</h4>
         <div class="grid two">
           <div class="item">
