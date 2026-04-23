@@ -22,11 +22,13 @@ import com.yunnan.datacollect.service.PlatformService.BatchProvinceReviewRequest
 import com.yunnan.datacollect.service.PlatformService.ChangePasswordRequest;
 import com.yunnan.datacollect.service.PlatformService.ComparisonRequest;
 import com.yunnan.datacollect.service.PlatformService.EnterpriseRequest;
+import com.yunnan.datacollect.service.PlatformService.ForceLogoutRequest;
 import com.yunnan.datacollect.service.PlatformService.LoginRequest;
 import com.yunnan.datacollect.service.PlatformService.MonthlyReportRequest;
 import com.yunnan.datacollect.service.PlatformService.NoticeRequest;
 import com.yunnan.datacollect.service.PlatformService.PasswordResetRequest;
 import com.yunnan.datacollect.service.PlatformService.SurveyPeriodRequest;
+import com.yunnan.datacollect.service.PlatformService.SystemSettingsRequest;
 import com.yunnan.datacollect.service.PlatformService.TrendRequest;
 import com.yunnan.datacollect.service.PlatformService.UserAdminResetPasswordRequest;
 import com.yunnan.datacollect.service.PlatformService.UserCreateRequest;
@@ -196,7 +198,7 @@ public class ApiController {
         String xml = platformService.exportMinistryXml(token, periodId);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=ministry-report.xml")
-                .contentType(MediaType.APPLICATION_XML)
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_XML_VALUE)
                 .body(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
@@ -260,10 +262,30 @@ public class ApiController {
         return ApiResponse.ok(platformService.sampling(token, city));
     }
 
+    @GetMapping("/sampling/export-csv")
+    public ResponseEntity<byte[]> exportSamplingCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                                    @RequestParam(required = false) String city) {
+        byte[] file = platformService.exportSamplingCsv(token, city);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=sampling.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+    }
+
     @PostMapping("/comparison")
     public ApiResponse<?> comparison(@RequestHeader(value = "X-Auth-Token", required = false) String token,
                                      @RequestBody ComparisonRequest request) {
         return ApiResponse.ok(platformService.comparison(token, request));
+    }
+
+    @PostMapping("/comparison/export-csv")
+    public ResponseEntity<byte[]> exportComparisonCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                                      @RequestBody ComparisonRequest request) {
+        byte[] file = platformService.exportComparisonCsv(token, request);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=comparison.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
     }
 
     @PostMapping("/trend")
@@ -272,9 +294,42 @@ public class ApiController {
         return ApiResponse.ok(platformService.trend(token, request));
     }
 
+    @PostMapping("/trend/export-csv")
+    public ResponseEntity<byte[]> exportTrendCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                                 @RequestBody TrendRequest request) {
+        byte[] file = platformService.exportTrendCsv(token, request);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=trend.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+    }
+
     @GetMapping("/monitor")
     public ApiResponse<?> monitor(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
         return ApiResponse.ok(platformService.monitor());
+    }
+
+    @GetMapping("/sessions")
+    public ApiResponse<?> sessions(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
+        return ApiResponse.ok(platformService.listSessions(token));
+    }
+
+    @PostMapping("/sessions/force-logout")
+    public ApiResponse<?> forceLogout(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                      @RequestBody ForceLogoutRequest request) {
+        platformService.forceLogout(token, request);
+        return ApiResponse.ok("会话已强制下线", null);
+    }
+
+    @GetMapping("/system/settings")
+    public ApiResponse<?> systemSettings(@RequestHeader(value = "X-Auth-Token", required = false) String token) {
+        return ApiResponse.ok(platformService.listSystemSettings(token));
+    }
+
+    @PostMapping("/system/settings")
+    public ApiResponse<?> saveSystemSettings(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                             @RequestBody SystemSettingsRequest request) {
+        return ApiResponse.ok(platformService.saveSystemSettings(token, request));
     }
 
     @GetMapping("/logs")

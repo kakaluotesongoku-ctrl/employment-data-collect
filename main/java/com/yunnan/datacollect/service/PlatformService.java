@@ -40,6 +40,7 @@ import com.yunnan.datacollect.repository.EnterpriseProfileRepository;
 import com.yunnan.datacollect.repository.MonthlyReportRepository;
 import com.yunnan.datacollect.repository.NoticeRecordRepository;
 import com.yunnan.datacollect.repository.SurveyPeriodRepository;
+import com.yunnan.datacollect.repository.SystemSettingRepository;
 import com.yunnan.datacollect.repository.UserAccountRepository;
 import com.yunnan.datacollect.web.SystemEventBroadcaster;
 
@@ -61,8 +62,6 @@ import jakarta.persistence.Table;
 public class PlatformService {
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final Duration SESSION_TTL = Duration.ofMinutes(30);
-    private static final Duration SMS_TTL = Duration.ofMinutes(3);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final AtomicLong idSequence = new AtomicLong(1000);
@@ -73,13 +72,19 @@ public class PlatformService {
     private final Map<Long, MonthlyReport> reports = new ConcurrentHashMap<>();
     private final Map<Long, NoticeRecord> notices = new ConcurrentHashMap<>();
     private final Map<Long, SurveyPeriod> periods = new ConcurrentHashMap<>();
+    private final Map<String, SystemSetting> systemSettings = new ConcurrentHashMap<>();
     private final List<AuditLog> auditLogs = new CopyOnWriteArrayList<>();
+
+    private volatile Duration sessionTtl = Duration.ofMinutes(30);
+    private volatile Duration smsTtl = Duration.ofMinutes(3);
+    private volatile int loginFailureThreshold = 3;
 
     private final UserAccountRepository userAccountRepository;
     private final EnterpriseProfileRepository enterpriseProfileRepository;
     private final MonthlyReportRepository monthlyReportRepository;
     private final NoticeRecordRepository noticeRecordRepository;
     private final SurveyPeriodRepository surveyPeriodRepository;
+    private final SystemSettingRepository systemSettingRepository;
     private final AuditLogRepository auditLogRepository;
     private final SystemEventBroadcaster systemEventBroadcaster;
 
@@ -88,6 +93,7 @@ public class PlatformService {
                            MonthlyReportRepository monthlyReportRepository,
                            NoticeRecordRepository noticeRecordRepository,
                            SurveyPeriodRepository surveyPeriodRepository,
+                           SystemSettingRepository systemSettingRepository,
                            AuditLogRepository auditLogRepository,
                            SystemEventBroadcaster systemEventBroadcaster) {
         this.userAccountRepository = userAccountRepository;
@@ -95,6 +101,7 @@ public class PlatformService {
         this.monthlyReportRepository = monthlyReportRepository;
         this.noticeRecordRepository = noticeRecordRepository;
         this.surveyPeriodRepository = surveyPeriodRepository;
+        this.systemSettingRepository = systemSettingRepository;
         this.auditLogRepository = auditLogRepository;
         this.systemEventBroadcaster = systemEventBroadcaster;
     }
@@ -105,6 +112,7 @@ public class PlatformService {
             loadStateFromDb();
             rebuildIndexes();
             refreshIdSequence();
+            loadSystemSettings();
             return;
         }
         seedPeriods();
@@ -112,6 +120,7 @@ public class PlatformService {
         seedEnterprises();
         seedReports();
         seedNotices();
+        seedSystemSettings();
         persistState();
     }
 
@@ -130,6 +139,17 @@ public class PlatformService {
         noticeRecordRepository.findAll().forEach(notice -> notices.put(notice.id, notice));
         surveyPeriodRepository.findAll().forEach(period -> periods.put(period.id, period));
         auditLogRepository.findAll().forEach(audit -> auditLogs.add(audit));
+    }
+
+    private void loadSystemSettings() {
+        systemSettings.clear();
+        if (systemSettingRepository.count() == 0) {
+            seedSystemSettings();
+            persistState();
+            return;
+        }
+        systemSettingRepository.findAll().forEach(setting -> systemSettings.put(setting.settingKey, setting));
+        applySystemSettings();
     }
 
     private void rebuildIndexes() {
@@ -154,11 +174,12 @@ public class PlatformService {
     }
 
     private void persistState() {
-        userAccountRepository.saveAll(usersById.values());
-        enterpriseProfileRepository.saveAll(enterprises.values());
-        monthlyReportRepository.saveAll(reports.values());
-        noticeRecordRepository.saveAll(notices.values());
-        surveyPeriodRepository.saveAll(periods.values());
+        userAccountRepository.saveAll(new ArrayList<>(usersById.values()));
+        enterpriseProfileRepository.saveAll(new ArrayList<>(enterprises.values()));
+        monthlyReportRepository.saveAll(new ArrayList<>(reports.values()));
+        noticeRecordRepository.saveAll(new ArrayList<>(notices.values()));
+        surveyPeriodRepository.saveAll(new ArrayList<>(periods.values()));
+        systemSettingRepository.saveAll(new ArrayList<>(systemSettings.values()));
     }
 
     private void emit(String type, Object payload) {
@@ -216,9 +237,9 @@ public class PlatformService {
         if (!hashPassword(request.password(), account.salt).equals(account.passwordHash)) {
             account.failedLoginCount++;
             account.lastFailedLoginAt = Instant.now();
-            if (account.failedLoginCount >= 3) {
+            if (account.failedLoginCount >= loginFailureThreshold) {
                 account.smsChallengeCode = randomDigits(6);
-                account.smsChallengeExpiresAt = Instant.now().plus(SMS_TTL);
+                account.smsChallengeExpiresAt = Instant.now().plus(smsTtl);
                 account.lockedUntil = Instant.now().plus(Duration.ofMinutes(5));
                 account.failedLoginCount = 0;
                 userAccountRepository.save(account);
@@ -239,7 +260,7 @@ public class PlatformService {
         session.role = account.role;
         session.clientIp = clientIp;
         session.createdAt = Instant.now();
-        session.expiresAt = Instant.now().plus(SESSION_TTL);
+        session.expiresAt = Instant.now().plus(sessionTtl);
         account.lastKnownIp = clientIp;
         userAccountRepository.save(account);
         sessions.put(session.token, session);
@@ -750,6 +771,51 @@ public class PlatformService {
         return new MonitorView(Runtime.getRuntime().availableProcessors(), used, max, sessions.size(), auditLogs.size(), Duration.between(Instant.now().minusSeconds(ProcessHandle.current().info().totalCpuDuration().map(Duration::toSeconds).orElse(0L)), Instant.now()).toSeconds());
     }
 
+    public List<SessionView> listSessions(String token) {
+        requireRole(token, Role.PROVINCE);
+        return sessions.values().stream()
+                .sorted(Comparator.comparing((SessionInfo session) -> session.createdAt).reversed())
+                .map(this::buildSessionView)
+                .collect(Collectors.toList());
+    }
+
+    public void forceLogout(String token, ForceLogoutRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        String targetToken = requireText(request.sessionToken(), "会话令牌不能为空");
+        SessionInfo removed = sessions.remove(targetToken);
+        if (removed == null) {
+            throw badRequest("会话不存在或已失效");
+        }
+        log("SESSION_FORCE_LOGOUT", "USER", removed.userId, "强制下线会话", operator.id, currentIp(operator));
+        emit("SESSION_FORCE_LOGOUT", Map.of("userId", removed.userId, "sessionToken", targetToken));
+    }
+
+    public List<SystemSettingView> listSystemSettings(String token) {
+        requireRole(token, Role.PROVINCE);
+        return systemSettings.values().stream()
+                .sorted(Comparator.comparing((SystemSetting setting) -> setting.settingKey))
+                .map(SystemSettingView::from)
+                .collect(Collectors.toList());
+    }
+
+    public List<SystemSettingView> saveSystemSettings(String token, SystemSettingsRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        if (request == null) {
+            throw badRequest("系统参数不能为空");
+        }
+        upsertSetting("SESSION_TTL_MINUTES", String.valueOf(normalizeMinutes(request.sessionTtlMinutes(), 30)));
+        upsertSetting("SMS_TTL_MINUTES", String.valueOf(normalizeMinutes(request.smsTtlMinutes(), 3)));
+        upsertSetting("LOGIN_FAILURE_THRESHOLD", String.valueOf(normalizeThreshold(request.loginFailureThreshold(), 3)));
+        if (request.systemNotice() != null) {
+            upsertSetting("SYSTEM_NOTICE", request.systemNotice().trim());
+        }
+        applySystemSettings();
+        persistState();
+        log("SYSTEM_SETTINGS_UPDATE", "SYSTEM", 1L, "更新系统参数配置", operator.id, currentIp(operator));
+        emit("SYSTEM_SETTINGS_UPDATE", Map.of("operatorId", operator.id));
+        return listSystemSettings(token);
+    }
+
     public List<AuditLogView> logs(String token, String targetType, Long targetId) {
         requireRole(token, Role.PROVINCE, Role.CITY, Role.ENTERPRISE);
         return filterAuditLogs(targetType, targetId, null, null, null, null).stream()
@@ -1032,6 +1098,49 @@ public class PlatformService {
                 List.of("岗位减少总数", String.valueOf(summary.jobDecreaseTotal())),
                 List.of("岗位变化数量占比", String.format(Locale.ROOT, "%.2f%%", summary.changeRatio()))
         ));
+    }
+
+    public byte[] exportSamplingCsv(String token, String cityFilter) {
+        SamplingView sampling = sampling(token, cityFilter);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(List.of("地市", "企业数", "占比(%)"));
+        for (SamplingRow row : sampling.rows()) {
+            rows.add(List.of(row.cityName(), String.valueOf(row.enterpriseCount()), String.format(Locale.ROOT, "%.2f", row.ratio())));
+        }
+        return exportCsv(rows);
+    }
+
+    public byte[] exportComparisonCsv(String token, ComparisonRequest request) {
+        ComparisonView comparison = comparison(token, request);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(List.of("分组", "左侧企业数", "右侧企业数", "左侧建档期岗位", "右侧建档期岗位", "左侧调查期岗位", "右侧调查期岗位", "左侧变化", "右侧变化"));
+        for (ComparisonRow row : comparison.rows()) {
+            rows.add(List.of(
+                    row.groupKey(),
+                    String.valueOf(row.leftEnterpriseCount()),
+                    String.valueOf(row.rightEnterpriseCount()),
+                    String.valueOf(row.leftArchivedJobs()),
+                    String.valueOf(row.rightArchivedJobs()),
+                    String.valueOf(row.leftSurveyJobs()),
+                    String.valueOf(row.rightSurveyJobs()),
+                    String.valueOf(row.leftChangeJobs()),
+                    String.valueOf(row.rightChangeJobs())
+            ));
+        }
+        return exportCsv(rows);
+    }
+
+    public byte[] exportTrendCsv(String token, TrendRequest request) {
+        TrendView trend = trend(token, request);
+        List<List<String>> rows = new ArrayList<>();
+        rows.add(List.of("调查期", "变化率(%)", "环比增长率(%)"));
+        for (TrendRow row : trend.rows()) {
+            rows.add(List.of(row.periodName(), String.format(Locale.ROOT, "%.2f", row.changeRatio()), row.ringRatio() == null ? "" : String.format(Locale.ROOT, "%.2f", row.ringRatio())));
+        }
+        if (trend.notes() != null && !trend.notes().isEmpty()) {
+            rows.add(List.of("备注", String.join("；", trend.notes()), ""));
+        }
+        return exportCsv(rows);
     }
 
     public PublishResult publishToMinistry(String token, Long periodId) {
@@ -1592,7 +1701,7 @@ public class PlatformService {
             sessions.remove(token);
             throw unauthorized("会话已过期，请重新登录");
         }
-        session.expiresAt = Instant.now().plus(SESSION_TTL);
+        session.expiresAt = Instant.now().plus(sessionTtl);
         UserAccount account = usersById.get(session.userId);
         if (account == null || !account.enabled) {
             throw unauthorized("账号不可用");
@@ -1736,6 +1845,79 @@ public class PlatformService {
     private void seedNotices() {
         createNoticeSeed("2026年度上报安排", "请各企业按时完成月度数据填报。", true, List.of("昆明市", "玉溪市"), Role.PROVINCE, "province_admin");
         createNoticeSeed("昆明市补充通知", "请本市企业尽快完成2月报送。", false, List.of("昆明市"), Role.CITY, "kunming_city");
+    }
+
+    private void seedSystemSettings() {
+        systemSettings.clear();
+        upsertSetting("SESSION_TTL_MINUTES", "30");
+        upsertSetting("SMS_TTL_MINUTES", "3");
+        upsertSetting("LOGIN_FAILURE_THRESHOLD", "3");
+        upsertSetting("SYSTEM_NOTICE", "请按时完成数据填报与审核。");
+        applySystemSettings();
+    }
+
+    private void applySystemSettings() {
+        sessionTtl = Duration.ofMinutes(normalizeMinutes(settingValue("SESSION_TTL_MINUTES", "30"), 30));
+        smsTtl = Duration.ofMinutes(normalizeMinutes(settingValue("SMS_TTL_MINUTES", "3"), 3));
+        loginFailureThreshold = normalizeThreshold(settingValue("LOGIN_FAILURE_THRESHOLD", "3"), 3);
+    }
+
+    private void upsertSetting(String key, String value) {
+        SystemSetting setting = systemSettings.computeIfAbsent(key, ignored -> new SystemSetting());
+        setting.settingKey = key;
+        setting.settingValue = value;
+        setting.updatedAt = Instant.now();
+    }
+
+    private String settingValue(String key, String defaultValue) {
+        SystemSetting setting = systemSettings.get(key);
+        if (setting == null || setting.settingValue == null || setting.settingValue.isBlank()) {
+            return defaultValue;
+        }
+        return setting.settingValue.trim();
+    }
+
+    private int normalizeMinutes(Integer value, int fallback) {
+        if (value == null || value < 1) {
+            return fallback;
+        }
+        return value;
+    }
+
+    private int normalizeMinutes(String value, int fallback) {
+        if (isBlank(value)) {
+            return fallback;
+        }
+        try {
+            return normalizeMinutes(Integer.valueOf(value.trim()), fallback);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private int normalizeThreshold(Integer value, int fallback) {
+        if (value == null || value < 1) {
+            return fallback;
+        }
+        return value;
+    }
+
+    private int normalizeThreshold(String value, int fallback) {
+        if (isBlank(value)) {
+            return fallback;
+        }
+        try {
+            return normalizeThreshold(Integer.valueOf(value.trim()), fallback);
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private SessionView buildSessionView(SessionInfo session) {
+        UserAccount user = usersById.get(session.userId);
+        return new SessionView(session.token, session.userId, user == null ? null : user.username,
+                session.role == null ? null : session.role.name(), user == null ? null : user.cityName,
+                session.clientIp, session.createdAt, session.expiresAt);
     }
 
     private void createNoticeSeed(String title, String content, boolean all, List<String> cities, Role role, String username) {
@@ -2135,6 +2317,10 @@ public class PlatformService {
     public record TrendView(List<TrendRow> rows, List<String> notes) {}
     public record TrendRow(long periodId, String periodName, double changeRatio, Double ringRatio) {}
     public record MonitorView(int processors, long usedMemory, long maxMemory, int activeSessions, int auditCount, long uptimeSeconds) {}
+    public record SessionView(String token, long userId, String username, String role, String cityName, String clientIp, Instant createdAt, Instant expiresAt) {}
+    public record ForceLogoutRequest(String sessionToken) {}
+    public record SystemSettingsRequest(Integer sessionTtlMinutes, Integer smsTtlMinutes, Integer loginFailureThreshold, String systemNotice) {}
+    public record SystemSettingView(String settingKey, String settingValue, Instant updatedAt) { static SystemSettingView from(SystemSetting setting) { return new SystemSettingView(setting.settingKey, setting.settingValue, setting.updatedAt); } }
     public record AuditLogView(long id, String action, String targetType, long targetId, String description, String actorName, String clientIp, Instant createdAt) { static AuditLogView from(AuditLog log) { return new AuditLogView(log.id, log.action, log.targetType, log.targetId, log.description, log.actorName, log.clientIp, log.createdAt); } }
     public record SurveyPeriodRequest(Long periodId, String name, String startDate, String endDate, String submissionStart, String submissionEnd, boolean active) {}
     public record SurveyPeriodView(long id, String name, String startDate, String endDate, String submissionStart, String submissionEnd, boolean active) { static SurveyPeriodView from(SurveyPeriod period) { return new SurveyPeriodView(period.id, period.name, period.startDate.toString(), period.endDate.toString(), period.submissionStart.toString(), period.submissionEnd.toString(), period.active); } }
@@ -2162,6 +2348,18 @@ public class PlatformService {
     public record MinistryExportView(long periodId, String periodName, int total, int changed, Instant publishedAt, List<MinistryRecord> records) {}
     private record MinistryExportPackage(PublishResult result, List<MonthlyReport> records) {}
     public record ReportData(Integer archivedJobs, Integer surveyJobs, String otherReason, String decreaseType, String mainReason, String mainReasonDescription, String secondaryReason, String secondaryReasonDescription, String thirdReason, String thirdReasonDescription) {}
+
+    @Entity
+    @Table(name = "system_setting")
+    public static class SystemSetting {
+        @Id
+        @Column(name = "setting_key")
+        public String settingKey;
+        @Column(name = "setting_value", length = 2000)
+        public String settingValue;
+        @Column(name = "updated_at")
+        public Instant updatedAt;
+    }
 
     private static class ComparisonMetric {
         long enterpriseCount;

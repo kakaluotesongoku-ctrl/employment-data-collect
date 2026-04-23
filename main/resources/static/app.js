@@ -16,6 +16,10 @@ const state = {
   logPage: 1,
   logSize: 8,
   logQuery: { action: '', actorName: '', createdFrom: '', createdTo: '' },
+  systemSettings: [],
+  sessions: [],
+  charts: {},
+  analysisState: { type: null, data: null, request: null },
   userPage: 1,
   userSize: 8,
   userQuery: { keyword: '', role: '', city: '', enabled: '' },
@@ -25,6 +29,35 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const show = (el, visible) => el.classList.toggle('hidden', !visible);
+
+function destroyChart(key) {
+  const chart = state.charts[key];
+  if (chart) {
+    chart.destroy();
+    delete state.charts[key];
+  }
+}
+
+function clearAnalysisCharts() {
+  destroyChart('analysis1');
+  destroyChart('analysis2');
+}
+
+function renderChart(key, canvasId, config) {
+  if (typeof Chart === 'undefined') {
+    return;
+  }
+  const canvas = $(canvasId);
+  if (!canvas) {
+    return;
+  }
+  destroyChart(key);
+  state.charts[key] = new Chart(canvas, config);
+}
+
+function setAnalysisSummary(html) {
+  $('analysis').innerHTML = html;
+}
 
 async function request(path, options = {}) {
   const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
@@ -231,6 +264,7 @@ function renderProvinceNoticeRows(target, rows) {
     target.innerHTML = `<div class="item"><p>暂无通知数据</p></div>`;
     return;
   }
+  target.dataset.items = JSON.stringify(rows);
   target.innerHTML = rows.map(row => `
     <div class="item">
       <h4>${escapeHtml(row.title || '-')}</h4>
@@ -242,6 +276,32 @@ function renderProvinceNoticeRows(target, rows) {
       </div>
     </div>
   `).join('');
+}
+
+function renderSessionRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无在线会话</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `
+    <div class="item">
+      <h4>${escapeHtml(row.username || '-')} · ${escapeHtml(row.role || '-')}</h4>
+      <p>会话令牌：${escapeHtml(row.token || '-')}</p>
+      <p>地市：${escapeHtml(row.cityName || '-')} · IP：${escapeHtml(row.clientIp || '-')}</p>
+      <p>创建：${escapeHtml(row.createdAt || '-')} · 到期：${escapeHtml(row.expiresAt || '-')}</p>
+      <div class="actions">
+        <button class="ghost force-logout-btn" data-session-token="${escapeHtml(row.token || '')}">强制下线</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderSystemSettings(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无系统参数</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `<div class="item"><h4>${escapeHtml(row.settingKey || '-')}</h4><p>${escapeHtml(row.settingValue || '-')}</p><p>${escapeHtml(row.updatedAt || '-')}</p></div>`).join('');
 }
 
 function renderPager(prefix, pageData) {
@@ -286,6 +346,8 @@ async function refreshDashboard() {
     await loadUsersPage(1);
     await loadLogsPage(1);
     await loadProvinceNoticesPage(1);
+    await loadSystemSettings();
+    await loadSessions();
   }
 }
 
@@ -513,6 +575,53 @@ async function deleteProvinceNotice() {
 async function exportProvinceNotices() {
   await downloadFile('/api/dashboard/export/notices', 'notices.xlsx');
   $('loginStatus').textContent = '通知 Excel 已导出';
+}
+
+async function loadSessions() {
+  if (!state.user || state.user.role !== 'PROVINCE') {
+    return;
+  }
+  const data = await request('/api/sessions');
+  state.sessions = data || [];
+  $('systemActiveSessions').value = String(state.sessions.length);
+  renderSessionRows($('sessionsResult'), state.sessions);
+}
+
+async function forceLogoutSession(sessionToken) {
+  if (!sessionToken) throw new Error('会话令牌不能为空');
+  await request('/api/sessions/force-logout', { method: 'POST', body: JSON.stringify({ sessionToken }) });
+  $('loginStatus').textContent = '会话已强制下线';
+  await loadSessions();
+}
+
+async function loadSystemSettings() {
+  if (!state.user || state.user.role !== 'PROVINCE') {
+    return;
+  }
+  const data = await request('/api/system/settings');
+  state.systemSettings = data || [];
+  renderSystemSettings($('systemSettingsResult'), state.systemSettings);
+  const ttl = state.systemSettings.find(item => item.settingKey === 'SESSION_TTL_MINUTES');
+  const smsTtl = state.systemSettings.find(item => item.settingKey === 'SMS_TTL_MINUTES');
+  const loginThreshold = state.systemSettings.find(item => item.settingKey === 'LOGIN_FAILURE_THRESHOLD');
+  const notice = state.systemSettings.find(item => item.settingKey === 'SYSTEM_NOTICE');
+  if (ttl) $('systemSessionTtl').value = ttl.settingValue || '';
+  if (smsTtl) $('systemSmsTtl').value = smsTtl.settingValue || '';
+  if (loginThreshold) $('systemLoginThreshold').value = loginThreshold.settingValue || '';
+  if (notice) $('systemNotice').value = notice.settingValue || '';
+}
+
+async function saveSystemSettings() {
+  const body = {
+    sessionTtlMinutes: Number($('systemSessionTtl').value || 0),
+    smsTtlMinutes: Number($('systemSmsTtl').value || 0),
+    loginFailureThreshold: Number($('systemLoginThreshold').value || 0),
+    systemNotice: $('systemNotice').value
+  };
+  const data = await request('/api/system/settings', { method: 'POST', body: JSON.stringify(body) });
+  state.systemSettings = data || [];
+  renderSystemSettings($('systemSettingsResult'), state.systemSettings);
+  $('loginStatus').textContent = '系统参数已更新';
 }
 
 async function exportLogsCsv() {
@@ -943,13 +1052,25 @@ function bindProvinceNoticeSelection() {
     if (!button) return;
     const id = Number(button.dataset.noticeId || 0);
     if (!id) return;
-    const data = await request(`/api/notices?page=1&size=1&keyword=${id}`);
-    const row = (data.items || []).find(item => item.id === id);
+    const data = JSON.parse($('provinceNotices').dataset.items || '[]');
+    const row = data.find(item => Number(item.id) === id);
     if (!row) return;
     $('provinceNoticeId').value = row.id;
     $('provinceNoticeTitle').value = row.title || '';
     $('provinceNoticeContent').value = row.content || '';
     $('provinceNoticeCities').value = (row.targetCities || []).join(',');
+  });
+}
+
+function bindSessionSelection() {
+  const container = $('sessionsResult');
+  if (!container) return;
+  container.addEventListener('click', (event) => {
+    const button = event.target.closest('.force-logout-btn');
+    if (!button) return;
+    forceLogoutSession(button.dataset.sessionToken || '').catch(error => {
+      $('loginStatus').textContent = error.message;
+    });
   });
 }
 
@@ -1016,6 +1137,8 @@ function bindActions() {
   $('publishProvinceNoticeBtn').addEventListener('click', () => saveProvinceNotice(true));
   $('deleteProvinceNoticeBtn').addEventListener('click', deleteProvinceNotice);
   $('exportProvinceNoticesBtn').addEventListener('click', exportProvinceNotices);
+  $('saveSystemSettingsBtn').addEventListener('click', saveSystemSettings);
+  $('refreshSessionsBtn').addEventListener('click', loadSessions);
   $('myReportPrevBtn').addEventListener('click', () => loadMyReportsPage(Math.max(1, state.myReportPage - 1)));
   $('myReportNextBtn').addEventListener('click', () => loadMyReportsPage(state.myReportPage + 1));
   $('showSummaryBtn').addEventListener('click', showSummary);
@@ -1031,4 +1154,5 @@ function bindActions() {
 bindTabs();
 bindUserSelection();
 bindProvinceNoticeSelection();
+bindSessionSelection();
 bindActions();

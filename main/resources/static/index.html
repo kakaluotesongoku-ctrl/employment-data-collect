@@ -254,6 +254,29 @@
         <div class="actions">
           <button class="ghost" id="savePeriodBtn">保存调查期</button>
         </div>
+        <div class="divider"></div>
+        <h4>系统参数与会话</h4>
+        <div class="grid four">
+          <label>会话超时（分钟）<input id="systemSessionTtl" type="number" value="30" min="1" /></label>
+          <label>短信有效期（分钟）<input id="systemSmsTtl" type="number" value="3" min="1" /></label>
+          <label>登录失败阈值<input id="systemLoginThreshold" type="number" value="3" min="1" /></label>
+          <label>当前会话数<input id="systemActiveSessions" type="number" value="0" readonly /></label>
+        </div>
+        <label>系统通知<textarea id="systemNotice" rows="3">请按时完成数据填报与审核。</textarea></label>
+        <div class="actions wrap">
+          <button class="ghost" id="saveSystemSettingsBtn">保存系统参数</button>
+          <button class="ghost" id="refreshSessionsBtn">刷新会话列表</button>
+        </div>
+        <div class="grid two">
+          <div>
+            <h4>在线会话</h4>
+            <div id="sessionsResult" class="list"></div>
+          </div>
+          <div>
+            <h4>系统参数概览</h4>
+            <div id="systemSettingsResult" class="list"></div>
+          </div>
+        </div>
         <div class="grid two">
           <label>比较期A<select id="leftPeriod"></select></label>
           <label>比较期B<select id="rightPeriod"></select></label>
@@ -352,6 +375,24 @@
           <button class="ghost" id="disconnectWsBtn">断开推送</button>
         </div>
         <div id="wsFeed" class="list"></div>
+        <div class="divider"></div>
+        <h4>统计分析</h4>
+        <div class="actions wrap">
+          <button class="ghost" id="exportSummaryAnalysisBtn">导出汇总 CSV</button>
+          <button class="ghost" id="exportSamplingAnalysisBtn">导出取样 CSV</button>
+          <button class="ghost" id="exportComparisonAnalysisBtn">导出对比 CSV</button>
+          <button class="ghost" id="exportTrendAnalysisBtn">导出趋势 CSV</button>
+        </div>
+        <div class="analysis-panels">
+          <div class="item">
+            <h4>主图表</h4>
+            <canvas id="analysisChart" height="260"></canvas>
+          </div>
+          <div class="item">
+            <h4>辅助图表</h4>
+            <canvas id="analysisChart2" height="260"></canvas>
+          </div>
+        </div>
         <div id="analysis" class="analysis"></div>
       </section>
 
@@ -399,5 +440,6 @@
   </main>
 
   <script src="/app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </body>
 </html>
