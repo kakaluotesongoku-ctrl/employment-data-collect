@@ -1,4 +1,5 @@
 {
     "java.configuration.updateBuildConfiguration": "interactive",
-    "github.copilot.chat.agentDebugLog.fileLogging.enabled": true
+    "github.copilot.chat.agentDebugLog.fileLogging.enabled": true,
+    "java.compile.nullAnalysis.mode": "automatic"
 }

@@ -178,6 +178,63 @@
           <button class="ghost" id="createUserBtn">创建账号</button>
         </div>
         <div class="divider"></div>
+        <h4>用户/角色管理</h4>
+        <div class="grid four">
+          <label>关键字<input id="userKeywordFilter" placeholder="账号/手机号/地市" /></label>
+          <label>角色
+            <select id="userRoleFilter">
+              <option value="">全部角色</option>
+              <option value="PROVINCE">省级</option>
+              <option value="CITY">市级</option>
+              <option value="ENTERPRISE">企业</option>
+            </select>
+          </label>
+          <label>地市<input id="userCityFilter" placeholder="如：昆明市" /></label>
+          <label>状态
+            <select id="userEnabledFilter">
+              <option value="">全部状态</option>
+              <option value="true">启用</option>
+              <option value="false">禁用</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="loadUsersBtn">加载用户</button>
+          <button class="ghost" id="searchUsersBtn">查询用户</button>
+          <button class="ghost" id="clearUsersBtn">清空筛选</button>
+          <button class="ghost" id="userPrevBtn">上一页</button>
+          <button class="ghost" id="userNextBtn">下一页</button>
+          <span class="pager-info" id="userPageInfo">第 1/1 页，共 0 条</span>
+        </div>
+        <div id="usersResult" class="list"></div>
+        <div class="grid four">
+          <label>目标用户ID<input id="manageUserId" type="number" placeholder="点击列表可自动填充" /></label>
+          <label>目标角色
+            <select id="manageUserRole">
+              <option value="CITY">市级</option>
+              <option value="ENTERPRISE">企业</option>
+              <option value="PROVINCE">省级</option>
+            </select>
+          </label>
+          <label>角色地市<input id="manageUserCity" placeholder="角色为市级时建议填写" /></label>
+          <label>账号启停
+            <select id="manageUserEnabled">
+              <option value="true">启用</option>
+              <option value="false">禁用</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid two">
+          <label>管理员重置密码<input id="manageUserPassword" type="password" placeholder="8-16位强密码" /></label>
+          <label>确认密码<input id="manageUserPasswordConfirm" type="password" /></label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="updateUserRoleBtn">修改角色</button>
+          <button class="ghost" id="toggleUserEnabledBtn">更新账号状态</button>
+          <button class="ghost" id="unlockUserBtn">解锁账号</button>
+          <button class="ghost" id="adminResetUserPwdBtn">管理员重置密码</button>
+        </div>
+        <div class="divider"></div>
         <h4>调查期管理</h4>
         <div class="grid two">
           <label>调查期名称<input id="periodName" placeholder="例如：2026年5月调查期" /></label>
@@ -205,6 +262,45 @@
           <button class="ghost" id="compareBtn">对比分析</button>
           <button class="ghost" id="trendBtn">趋势分析</button>
           <button class="ghost" id="monitorBtn">系统监控</button>
+        </div>
+        <div class="divider"></div>
+        <h4>省级批量审核</h4>
+        <div class="actions wrap">
+          <button class="ghost" id="loadProvinceReportsBtn">加载省级待审报表</button>
+          <button class="ghost" id="provinceBatchApproveBtn">批量通过（省级）</button>
+          <button class="ghost" id="provinceBatchRejectBtn">批量退回（省级）</button>
+        </div>
+        <div id="provinceReports" class="list"></div>
+        <div class="divider"></div>
+        <h4>系统日志与状态</h4>
+        <div class="grid four">
+          <label>动作<input id="logActionFilter" placeholder="如：LOGIN" /></label>
+          <label>操作人<input id="logActorFilter" placeholder="如：province_admin" /></label>
+          <label>开始日期<input id="logFromFilter" type="date" /></label>
+          <label>结束日期<input id="logToFilter" type="date" /></label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="searchLogsBtn">查询日志</button>
+          <button class="ghost" id="clearLogsBtn">清空日志条件</button>
+          <button class="ghost" id="logPrevBtn">上一页</button>
+          <button class="ghost" id="logNextBtn">下一页</button>
+          <button class="ghost" id="exportLogsBtn">导出日志 CSV</button>
+          <span class="pager-info" id="logPageInfo">第 1/1 页，共 0 条</span>
+        </div>
+        <div id="logsResult" class="list"></div>
+        <div class="divider"></div>
+        <h4>自定义字段导出</h4>
+        <div class="grid two">
+          <label>报表字段（英文逗号分隔）
+            <input id="customReportFields" value="id,enterpriseName,periodName,archivedJobs,surveyJobs,status" />
+          </label>
+          <label>企业字段（英文逗号分隔）
+            <input id="customEnterpriseFields" value="id,enterpriseName,orgCode,cityName,status,industry" />
+          </label>
+        </div>
+        <div class="actions wrap">
+          <button class="ghost" id="exportCustomReportsBtn">导出自定义报表 CSV</button>
+          <button class="ghost" id="exportCustomEnterprisesBtn">导出自定义企业 CSV</button>
         </div>
         <div class="divider"></div>
         <h4>实时推送</h4>

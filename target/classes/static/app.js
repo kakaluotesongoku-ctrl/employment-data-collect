@@ -10,6 +10,12 @@ const state = {
   enterprisePage: 1,
   enterpriseSize: 5,
   enterpriseQuery: { keyword: '', city: '', nature: '', industry: '' },
+  logPage: 1,
+  logSize: 8,
+  logQuery: { action: '', actorName: '', createdFrom: '', createdTo: '' },
+  userPage: 1,
+  userSize: 8,
+  userQuery: { keyword: '', role: '', city: '', enabled: '' },
   myReportPage: 1,
   myReportSize: 5
 };
@@ -185,6 +191,38 @@ function renderEnterpriseRows(target, rows) {
   target.innerHTML = rows.map(row => `<div class="item"><h4>${escapeHtml(row.enterpriseName || '-')}</h4><p>${escapeHtml(row.cityName || '-')} · ${escapeHtml(row.enterpriseNature || '-')} · ${escapeHtml(row.industry || '-')}</p><p>组织机构代码：${escapeHtml(row.orgCode || '-')} · 状态：${escapeHtml(row.status || '-')}</p></div>`).join('');
 }
 
+function renderUserRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无用户数据</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `
+    <div class="item">
+      <h4>${escapeHtml(row.username || '-')}</h4>
+      <p>ID:${row.id} · 角色:${escapeHtml(row.role || '-')} · 地市:${escapeHtml(row.cityName || '-')}</p>
+      <p>手机号:${escapeHtml(row.phone || '-')} · 状态:${row.enabled ? '启用' : '禁用'} · 失败次数:${row.failedLoginCount || 0} · 锁定到:${escapeHtml(row.lockedUntil || '-')}</p>
+      <div class="actions">
+        <button class="ghost select-user-btn" data-user-id="${row.id}" data-user-role="${escapeHtml(row.role || '')}" data-user-city="${escapeHtml(row.cityName || '')}" data-user-enabled="${row.enabled}">选中用户</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderLogRows(target, rows) {
+  if (!rows || rows.length === 0) {
+    target.innerHTML = `<div class="item"><p>暂无日志数据</p></div>`;
+    return;
+  }
+  target.innerHTML = rows.map(row => `
+    <div class="item">
+      <h4>${escapeHtml(row.action || '-')}</h4>
+      <p>ID:${row.id} · 目标:${escapeHtml(row.targetType || '-')}#${row.targetId} · 操作人:${escapeHtml(row.actorName || '-')}</p>
+      <p>IP:${escapeHtml(row.clientIp || '-')} · 时间:${escapeHtml(row.createdAt || '-')}</p>
+      <p>${escapeHtml(row.description || '-')}</p>
+    </div>
+  `).join('');
+}
+
 function renderPager(prefix, pageData) {
   const label = $(`${prefix}PageInfo`);
   const prevBtn = $(`${prefix}PrevBtn`);
@@ -223,6 +261,10 @@ async function refreshDashboard() {
   await loadNoticesPage(1);
   await loadEnterprisesPage(1);
   await loadMyReportsPage(1);
+  if (data.user.role === 'PROVINCE') {
+    await loadUsersPage(1);
+    await loadLogsPage(1);
+  }
 }
 
 async function login() {
@@ -354,6 +396,133 @@ async function loadMyReportsPage(page) {
   renderPager('myReport', data);
 }
 
+async function searchLogs() {
+  state.logQuery.action = $('logActionFilter').value.trim();
+  state.logQuery.actorName = $('logActorFilter').value.trim();
+  state.logQuery.createdFrom = $('logFromFilter').value;
+  state.logQuery.createdTo = $('logToFilter').value;
+  await loadLogsPage(1);
+}
+
+async function clearLogFilter() {
+  $('logActionFilter').value = '';
+  $('logActorFilter').value = '';
+  $('logFromFilter').value = '';
+  $('logToFilter').value = '';
+  state.logQuery = { action: '', actorName: '', createdFrom: '', createdTo: '' };
+  await loadLogsPage(1);
+}
+
+async function loadLogsPage(page) {
+  if (!state.user || state.user.role !== 'PROVINCE') {
+    return;
+  }
+  state.logPage = page;
+  const params = new URLSearchParams();
+  if (state.logQuery.action) params.set('action', state.logQuery.action);
+  if (state.logQuery.actorName) params.set('actorName', state.logQuery.actorName);
+  if (state.logQuery.createdFrom) params.set('createdFrom', state.logQuery.createdFrom);
+  if (state.logQuery.createdTo) params.set('createdTo', state.logQuery.createdTo);
+  params.set('page', String(state.logPage));
+  params.set('size', String(state.logSize));
+  const data = await request(`/api/logs/page?${params.toString()}`);
+  renderLogRows($('logsResult'), data.items || []);
+  renderPager('log', data);
+}
+
+async function exportLogsCsv() {
+  const params = new URLSearchParams();
+  if (state.logQuery.action) params.set('action', state.logQuery.action);
+  if (state.logQuery.actorName) params.set('actorName', state.logQuery.actorName);
+  if (state.logQuery.createdFrom) params.set('createdFrom', state.logQuery.createdFrom);
+  if (state.logQuery.createdTo) params.set('createdTo', state.logQuery.createdTo);
+  await downloadFile(`/api/logs/export-csv?${params.toString()}`, 'audit-logs.csv');
+  $('loginStatus').textContent = '日志 CSV 已导出';
+}
+
+async function searchUsers() {
+  state.userQuery.keyword = $('userKeywordFilter').value.trim();
+  state.userQuery.role = $('userRoleFilter').value;
+  state.userQuery.city = $('userCityFilter').value.trim();
+  state.userQuery.enabled = $('userEnabledFilter').value;
+  await loadUsersPage(1);
+}
+
+async function clearUsersFilter() {
+  $('userKeywordFilter').value = '';
+  $('userRoleFilter').value = '';
+  $('userCityFilter').value = '';
+  $('userEnabledFilter').value = '';
+  state.userQuery = { keyword: '', role: '', city: '', enabled: '' };
+  await loadUsersPage(1);
+}
+
+async function loadUsersPage(page) {
+  if (!state.user || state.user.role !== 'PROVINCE') {
+    return;
+  }
+  state.userPage = page;
+  const params = new URLSearchParams();
+  if (state.userQuery.keyword) params.set('keyword', state.userQuery.keyword);
+  if (state.userQuery.role) params.set('role', state.userQuery.role);
+  if (state.userQuery.city) params.set('city', state.userQuery.city);
+  if (state.userQuery.enabled) params.set('enabled', state.userQuery.enabled);
+  params.set('page', String(state.userPage));
+  params.set('size', String(state.userSize));
+  const data = await request(`/api/users?${params.toString()}`);
+  renderUserRows($('usersResult'), data.items || []);
+  renderPager('user', data);
+}
+
+function selectedManageUserId() {
+  const raw = $('manageUserId').value;
+  const id = Number(raw);
+  if (!id) {
+    throw new Error('请先选择目标用户');
+  }
+  return id;
+}
+
+async function updateUserRole() {
+  const body = {
+    userId: selectedManageUserId(),
+    role: $('manageUserRole').value,
+    cityName: $('manageUserCity').value
+  };
+  await request('/api/users/role', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '用户角色已更新';
+  await loadUsersPage(state.userPage);
+}
+
+async function toggleUserEnabled() {
+  const body = {
+    userId: selectedManageUserId(),
+    enabled: $('manageUserEnabled').value === 'true'
+  };
+  await request('/api/users/enabled', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '用户状态已更新';
+  await loadUsersPage(state.userPage);
+}
+
+async function unlockUser() {
+  const body = { userId: selectedManageUserId() };
+  await request('/api/users/unlock', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '用户已解锁';
+  await loadUsersPage(state.userPage);
+}
+
+async function adminResetUserPassword() {
+  const body = {
+    userId: selectedManageUserId(),
+    newPassword: $('manageUserPassword').value,
+    confirmPassword: $('manageUserPasswordConfirm').value
+  };
+  await request('/api/users/reset-password-admin', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = '管理员重置密码成功';
+  $('manageUserPassword').value = '';
+  $('manageUserPasswordConfirm').value = '';
+}
+
 async function saveEnterprise(submit) {
   const body = {
     regionProvince: '云南省',
@@ -424,6 +593,28 @@ async function cityBatchProcess(approved) {
   await refreshDashboard();
 }
 
+async function loadProvinceReports() {
+  const data = await request('/api/reports?status=PENDING_PROVINCE_REVIEW');
+  renderSelectableList($('provinceReports'), data, '暂无省级待审报表');
+  $('provinceReports').dataset.items = JSON.stringify(data);
+}
+
+function selectedProvinceReportIds() {
+  const container = $('provinceReports');
+  if (!container) return [];
+  return Array.from(container.querySelectorAll('.batch-report-checkbox:checked')).map(input => Number(input.value));
+}
+
+async function provinceBatchProcess(approved) {
+  const reportIds = selectedProvinceReportIds();
+  if (!reportIds.length) throw new Error('请先勾选省级待审报表');
+  const body = { reportIds, approved, reason: approved ? '' : '批量退回，需补充省级核验材料' };
+  const data = await request('/api/reports/province-review/batch', { method: 'POST', body: JSON.stringify(body) });
+  $('loginStatus').textContent = `省级批量审核完成：成功 ${data.successIds.length} 条，失败 ${data.failedMessages.length} 条`;
+  await loadProvinceReports();
+  await refreshDashboard();
+}
+
 async function saveNotice() {
   const body = {
     title: $('noticeTitle').value,
@@ -477,6 +668,22 @@ async function exportSummaryCsv() {
   const periodId = periodsSelectValue();
   await downloadFile(`/api/dashboard/export/summary-csv?periodId=${periodId}`, 'summary.csv');
   $('loginStatus').textContent = '汇总 CSV 已导出';
+}
+
+async function exportCustomReportsCsv() {
+  const fields = $('customReportFields').value.trim();
+  const params = new URLSearchParams();
+  if (fields) params.set('fields', fields);
+  await downloadFile(`/api/dashboard/export/reports-custom-csv?${params.toString()}`, 'reports-custom.csv');
+  $('loginStatus').textContent = '自定义报表 CSV 已导出';
+}
+
+async function exportCustomEnterprisesCsv() {
+  const fields = $('customEnterpriseFields').value.trim();
+  const params = new URLSearchParams();
+  if (fields) params.set('fields', fields);
+  await downloadFile(`/api/dashboard/export/enterprises-custom-csv?${params.toString()}`, 'enterprises-custom.csv');
+  $('loginStatus').textContent = '自定义企业 CSV 已导出';
 }
 
 async function provinceAction(action) {
@@ -628,6 +835,21 @@ function bindTabs() {
   });
 }
 
+function bindUserSelection() {
+  const container = $('usersResult');
+  if (!container) return;
+  container.addEventListener('click', (event) => {
+    const button = event.target.closest('.select-user-btn');
+    if (!button) return;
+    $('manageUserId').value = button.dataset.userId || '';
+    if (button.dataset.userRole) {
+      $('manageUserRole').value = button.dataset.userRole;
+    }
+    $('manageUserCity').value = button.dataset.userCity || '';
+    $('manageUserEnabled').value = button.dataset.userEnabled === 'false' ? 'false' : 'true';
+  });
+}
+
 function bindActions() {
   $('loginBtn').addEventListener('click', login);
   $('logoutBtn').addEventListener('click', logout);
@@ -642,6 +864,9 @@ function bindActions() {
   $('cityRejectBtn').addEventListener('click', () => cityProcess(false));
   $('cityBatchApproveBtn').addEventListener('click', () => cityBatchProcess(true));
   $('cityBatchRejectBtn').addEventListener('click', () => cityBatchProcess(false));
+  $('loadProvinceReportsBtn').addEventListener('click', loadProvinceReports);
+  $('provinceBatchApproveBtn').addEventListener('click', () => provinceBatchProcess(true));
+  $('provinceBatchRejectBtn').addEventListener('click', () => provinceBatchProcess(false));
   $('saveNoticeBtn').addEventListener('click', saveNotice);
   $('createUserBtn').addEventListener('click', createUser);
   $('savePeriodBtn').addEventListener('click', savePeriod);
@@ -656,6 +881,8 @@ function bindActions() {
   $('exportReportsCsvBtn').addEventListener('click', exportReportsCsv);
   $('exportEnterprisesCsvBtn').addEventListener('click', exportEnterprisesCsv);
   $('exportSummaryCsvBtn').addEventListener('click', exportSummaryCsv);
+  $('exportCustomReportsBtn').addEventListener('click', exportCustomReportsCsv);
+  $('exportCustomEnterprisesBtn').addEventListener('click', exportCustomEnterprisesCsv);
   $('searchNoticesBtn').addEventListener('click', searchNotices);
   $('clearNoticesBtn').addEventListener('click', clearNoticesFilter);
   $('noticePrevBtn').addEventListener('click', () => loadNoticesPage(Math.max(1, state.noticePage - 1)));
@@ -664,6 +891,20 @@ function bindActions() {
   $('clearEnterprisesBtn').addEventListener('click', clearEnterpriseFilter);
   $('enterprisePrevBtn').addEventListener('click', () => loadEnterprisesPage(Math.max(1, state.enterprisePage - 1)));
   $('enterpriseNextBtn').addEventListener('click', () => loadEnterprisesPage(state.enterprisePage + 1));
+  $('loadUsersBtn').addEventListener('click', () => loadUsersPage(1));
+  $('searchUsersBtn').addEventListener('click', searchUsers);
+  $('clearUsersBtn').addEventListener('click', clearUsersFilter);
+  $('userPrevBtn').addEventListener('click', () => loadUsersPage(Math.max(1, state.userPage - 1)));
+  $('userNextBtn').addEventListener('click', () => loadUsersPage(state.userPage + 1));
+  $('updateUserRoleBtn').addEventListener('click', updateUserRole);
+  $('toggleUserEnabledBtn').addEventListener('click', toggleUserEnabled);
+  $('unlockUserBtn').addEventListener('click', unlockUser);
+  $('adminResetUserPwdBtn').addEventListener('click', adminResetUserPassword);
+  $('searchLogsBtn').addEventListener('click', searchLogs);
+  $('clearLogsBtn').addEventListener('click', clearLogFilter);
+  $('logPrevBtn').addEventListener('click', () => loadLogsPage(Math.max(1, state.logPage - 1)));
+  $('logNextBtn').addEventListener('click', () => loadLogsPage(state.logPage + 1));
+  $('exportLogsBtn').addEventListener('click', exportLogsCsv);
   $('myReportPrevBtn').addEventListener('click', () => loadMyReportsPage(Math.max(1, state.myReportPage - 1)));
   $('myReportNextBtn').addEventListener('click', () => loadMyReportsPage(state.myReportPage + 1));
   $('showSummaryBtn').addEventListener('click', showSummary);
@@ -677,4 +918,5 @@ function bindActions() {
 }
 
 bindTabs();
+bindUserSelection();
 bindActions();

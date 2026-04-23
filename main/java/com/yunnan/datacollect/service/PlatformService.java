@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -539,6 +540,28 @@ public class PlatformService {
         return MonthlyReportView.from(report);
     }
 
+    public BatchReviewResult reviewProvinceReportBatch(String token, BatchProvinceReviewRequest request) {
+        requireRole(token, Role.PROVINCE);
+        if (request == null || request.reportIds() == null || request.reportIds().isEmpty()) {
+            throw badRequest("请至少选择1条待审核数据");
+        }
+        List<Long> successIds = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+        for (Long reportId : request.reportIds()) {
+            if (reportId == null) {
+                continue;
+            }
+            try {
+                reviewProvinceReport(token, reportId, request.approved(), request.reason());
+                successIds.add(reportId);
+            } catch (RuntimeException ex) {
+                failed.add(reportId + ":" + ex.getMessage());
+            }
+        }
+        emit("PROVINCE_REVIEW_BATCH", Map.of("successIds", successIds, "failedMessages", failed));
+        return new BatchReviewResult(successIds, failed);
+    }
+
     public MonthlyReportView provinceCorrectReport(String token, long reportId, MonthlyReportRequest request) {
         UserAccount account = requireRole(token, Role.PROVINCE);
         MonthlyReport report = requireReport(reportId);
@@ -729,13 +752,42 @@ public class PlatformService {
 
     public List<AuditLogView> logs(String token, String targetType, Long targetId) {
         requireRole(token, Role.PROVINCE, Role.CITY, Role.ENTERPRISE);
-        return auditLogs.stream()
-                .filter(log -> targetType == null || targetType.isBlank() || log.targetType.equalsIgnoreCase(targetType))
-                .filter(log -> targetId == null || Objects.equals(log.targetId, targetId))
+        return filterAuditLogs(targetType, targetId, null, null, null, null).stream()
                 .sorted(Comparator.comparing((AuditLog l) -> l.createdAt).reversed())
                 .map(AuditLogView::from)
                 .collect(Collectors.toList());
     }
+
+        public PagedResult<AuditLogView> logsPage(String token, String targetType, Long targetId, String action,
+                              String actorName, String createdFrom, String createdTo,
+                              Integer page, Integer size) {
+        requireRole(token, Role.PROVINCE, Role.CITY, Role.ENTERPRISE);
+        List<AuditLogView> rows = filterAuditLogs(targetType, targetId, action, actorName, createdFrom, createdTo).stream()
+            .sorted(Comparator.comparing((AuditLog l) -> l.createdAt).reversed())
+            .map(AuditLogView::from)
+            .collect(Collectors.toList());
+        return paginate(rows, page, size);
+        }
+
+        public byte[] exportLogsCsv(String token, String targetType, Long targetId, String action,
+                    String actorName, String createdFrom, String createdTo) {
+        requireRole(token, Role.PROVINCE, Role.CITY, Role.ENTERPRISE);
+        List<List<String>> data = new ArrayList<>();
+        data.add(List.of("ID", "动作", "目标类型", "目标ID", "描述", "操作人", "IP", "时间"));
+        filterAuditLogs(targetType, targetId, action, actorName, createdFrom, createdTo).stream()
+            .sorted(Comparator.comparing((AuditLog l) -> l.createdAt).reversed())
+            .forEach(log -> data.add(List.of(
+                String.valueOf(log.id),
+                String.valueOf(log.action),
+                String.valueOf(log.targetType),
+                String.valueOf(log.targetId),
+                String.valueOf(log.description),
+                String.valueOf(log.actorName),
+                String.valueOf(log.clientIp),
+                String.valueOf(log.createdAt)
+            )));
+        return exportCsv(data);
+        }
 
     public byte[] exportNoticesExcel(String token, List<NoticeView> rows) {
         requireRole(token, Role.PROVINCE, Role.CITY);
@@ -772,6 +824,28 @@ public class PlatformService {
         return exportCsv(data);
     }
 
+    public byte[] exportReportsCustomCsv(String token, List<MonthlyReportView> rows, List<String> fields) {
+        requireRole(token, Role.PROVINCE, Role.CITY);
+        List<String> selected = normalizeReportFields(fields);
+        List<List<String>> data = new ArrayList<>();
+        data.add(selected.stream().map(this::reportFieldLabel).collect(Collectors.toList()));
+        for (MonthlyReportView row : rows) {
+            data.add(selected.stream().map(field -> reportFieldValue(row, field)).collect(Collectors.toList()));
+        }
+        return exportCsv(data);
+    }
+
+    public byte[] exportEnterprisesCustomCsv(String token, List<EnterpriseView> rows, List<String> fields) {
+        requireRole(token, Role.PROVINCE, Role.CITY);
+        List<String> selected = normalizeEnterpriseFields(fields);
+        List<List<String>> data = new ArrayList<>();
+        data.add(selected.stream().map(this::enterpriseFieldLabel).collect(Collectors.toList()));
+        for (EnterpriseView row : rows) {
+            data.add(selected.stream().map(field -> enterpriseFieldValue(row, field)).collect(Collectors.toList()));
+        }
+        return exportCsv(data);
+    }
+
     public LoginResponse createUser(String token, UserCreateRequest request) {
         requireRole(token, Role.PROVINCE);
         if (usersByUsername.containsKey(request.username().trim().toLowerCase(Locale.ROOT))) {
@@ -793,6 +867,107 @@ public class PlatformService {
         log("USER_CREATE", "USER", user.id, "创建用户账号", currentUser(token).id(), currentIpFromToken(token));
         persistState();
         return LoginResponse.success(buildUserView(user), null);
+    }
+
+    public PagedResult<UserManageView> listUsersPage(String token, String keyword, String role, String city,
+                                                     Boolean enabled, Integer page, Integer size) {
+        requireRole(token, Role.PROVINCE);
+        List<UserManageView> rows = usersById.values().stream()
+                .filter(user -> keyword == null || keyword.isBlank()
+                        || containsIgnoreCase(user.username, keyword)
+                        || containsIgnoreCase(user.phone, keyword)
+                        || containsIgnoreCase(user.cityName, keyword))
+                .filter(user -> role == null || role.isBlank() || user.role.name().equalsIgnoreCase(role))
+                .filter(user -> city == null || city.isBlank() || containsIgnoreCase(user.cityName, city))
+                .filter(user -> enabled == null || user.enabled == enabled)
+                .sorted(Comparator.comparing((UserAccount user) -> user.id).reversed())
+                .map(this::buildUserManageView)
+                .collect(Collectors.toList());
+        return paginate(rows, page, size);
+    }
+
+    public UserView updateUserRole(String token, UserRoleUpdateRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        if (request == null || request.userId() == null || request.role() == null) {
+            throw badRequest("用户ID与目标角色不能为空");
+        }
+        UserAccount target = requireUserById(request.userId());
+        if (target.id == operator.id) {
+            throw badRequest("不允许修改当前登录账号的角色");
+        }
+        if (request.role() == Role.CITY && isBlank(request.cityName())) {
+            throw badRequest("市级账号必须指定所属地市");
+        }
+        target.role = request.role();
+        target.cityName = request.cityName() == null ? target.cityName : request.cityName().trim();
+        if (target.role == Role.PROVINCE && isBlank(target.cityName)) {
+            target.cityName = "昆明市";
+        }
+        if (target.role != Role.ENTERPRISE) {
+            target.enterpriseId = null;
+        }
+        userAccountRepository.save(target);
+        sessions.entrySet().removeIf(entry -> entry.getValue().userId == target.id);
+        log("USER_ROLE_UPDATE", "USER", target.id,
+                "修改用户角色为" + target.role.name(), operator.id, currentIp(operator));
+        return buildUserView(target);
+    }
+
+    public UserView setUserEnabled(String token, UserEnableRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        if (request == null || request.userId() == null) {
+            throw badRequest("用户ID不能为空");
+        }
+        UserAccount target = requireUserById(request.userId());
+        if (target.id == operator.id && !request.enabled()) {
+            throw badRequest("不允许禁用当前登录账号");
+        }
+        target.enabled = request.enabled();
+        if (!target.enabled) {
+            sessions.entrySet().removeIf(entry -> entry.getValue().userId == target.id);
+        }
+        userAccountRepository.save(target);
+        log("USER_ENABLED_UPDATE", "USER", target.id,
+                request.enabled() ? "启用用户账号" : "禁用用户账号", operator.id, currentIp(operator));
+        return buildUserView(target);
+    }
+
+    public UserView unlockUser(String token, UserUnlockRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        if (request == null || request.userId() == null) {
+            throw badRequest("用户ID不能为空");
+        }
+        UserAccount target = requireUserById(request.userId());
+        target.failedLoginCount = 0;
+        target.lockedUntil = null;
+        target.smsChallengeCode = null;
+        target.smsChallengeExpiresAt = null;
+        userAccountRepository.save(target);
+        log("USER_UNLOCK", "USER", target.id, "解锁用户账号", operator.id, currentIp(operator));
+        return buildUserView(target);
+    }
+
+    public UserView adminResetUserPassword(String token, UserAdminResetPasswordRequest request) {
+        UserAccount operator = requireRole(token, Role.PROVINCE);
+        if (request == null || request.userId() == null) {
+            throw badRequest("用户ID不能为空");
+        }
+        UserAccount target = requireUserById(request.userId());
+        String newPassword = requireText(request.newPassword(), "新密码不能为空");
+        String confirmPassword = requireText(request.confirmPassword(), "确认密码不能为空");
+        if (!Objects.equals(newPassword, confirmPassword)) {
+            throw badRequest("新密码与确认密码不一致");
+        }
+        validatePasswordRule(newPassword);
+        target.passwordHash = hashPassword(newPassword, target.salt);
+        target.failedLoginCount = 0;
+        target.lockedUntil = null;
+        target.smsChallengeCode = null;
+        target.smsChallengeExpiresAt = null;
+        userAccountRepository.save(target);
+        sessions.entrySet().removeIf(entry -> entry.getValue().userId == target.id);
+        log("USER_PASSWORD_RESET_BY_ADMIN", "USER", target.id, "管理员重置用户密码", operator.id, currentIp(operator));
+        return buildUserView(target);
     }
 
     public SurveyPeriodView savePeriod(String token, SurveyPeriodRequest request) {
@@ -1079,6 +1254,123 @@ public class PlatformService {
         return builder.toString().getBytes(StandardCharsets.UTF_8);
     }
 
+    private List<AuditLog> filterAuditLogs(String targetType, Long targetId, String action,
+                                           String actorName, String createdFrom, String createdTo) {
+        LocalDate from = parseOptionalDate(createdFrom);
+        LocalDate to = parseOptionalDate(createdTo);
+        return auditLogs.stream()
+                .filter(log -> targetType == null || targetType.isBlank() || log.targetType.equalsIgnoreCase(targetType))
+                .filter(log -> targetId == null || Objects.equals(log.targetId, targetId))
+                .filter(log -> action == null || action.isBlank() || containsIgnoreCase(log.action, action))
+                .filter(log -> actorName == null || actorName.isBlank() || containsIgnoreCase(log.actorName, actorName))
+                .filter(log -> {
+                    if (log.createdAt == null) {
+                        return from == null && to == null;
+                    }
+                    LocalDate created = log.createdAt.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    return (from == null || !created.isBefore(from)) && (to == null || !created.isAfter(to));
+                })
+                .toList();
+    }
+
+    private List<String> normalizeReportFields(List<String> fields) {
+        List<String> defaults = List.of("id", "enterpriseName", "periodName", "archivedJobs", "surveyJobs", "status");
+        Set<String> allowed = Set.of("id", "enterpriseName", "cityName", "periodName", "archivedJobs", "surveyJobs",
+                "status", "cityReviewReason", "provinceReviewReason", "submittedAt", "updatedAt");
+        List<String> source = (fields == null || fields.isEmpty()) ? defaults : fields;
+        List<String> normalized = source.stream().filter(Objects::nonNull).map(String::trim)
+                .filter(s -> !s.isBlank() && allowed.contains(s)).toList();
+        if (normalized.isEmpty()) {
+            return defaults;
+        }
+        return new ArrayList<>(new LinkedHashSet<>(normalized));
+    }
+
+    private List<String> normalizeEnterpriseFields(List<String> fields) {
+        List<String> defaults = List.of("id", "enterpriseName", "orgCode", "cityName", "status");
+        Set<String> allowed = Set.of("id", "enterpriseName", "orgCode", "cityName", "countyName", "enterpriseNature",
+                "industry", "contactName", "contactPhone", "status", "reviewReason", "submittedAt", "reviewedAt");
+        List<String> source = (fields == null || fields.isEmpty()) ? defaults : fields;
+        List<String> normalized = source.stream().filter(Objects::nonNull).map(String::trim)
+                .filter(s -> !s.isBlank() && allowed.contains(s)).toList();
+        if (normalized.isEmpty()) {
+            return defaults;
+        }
+        return new ArrayList<>(new LinkedHashSet<>(normalized));
+    }
+
+    private String reportFieldLabel(String field) {
+        return switch (field) {
+            case "id" -> "ID";
+            case "enterpriseName" -> "企业名称";
+            case "cityName" -> "地市";
+            case "periodName" -> "调查期";
+            case "archivedJobs" -> "建档期就业人数";
+            case "surveyJobs" -> "调查期就业人数";
+            case "status" -> "状态";
+            case "cityReviewReason" -> "市级审核意见";
+            case "provinceReviewReason" -> "省级审核意见";
+            case "submittedAt" -> "提交时间";
+            case "updatedAt" -> "更新时间";
+            default -> field;
+        };
+    }
+
+    private String enterpriseFieldLabel(String field) {
+        return switch (field) {
+            case "id" -> "ID";
+            case "enterpriseName" -> "企业名称";
+            case "orgCode" -> "组织机构代码";
+            case "cityName" -> "地市";
+            case "countyName" -> "区县";
+            case "enterpriseNature" -> "企业性质";
+            case "industry" -> "所属行业";
+            case "contactName" -> "联系人";
+            case "contactPhone" -> "联系电话";
+            case "status" -> "备案状态";
+            case "reviewReason" -> "审核意见";
+            case "submittedAt" -> "提交时间";
+            case "reviewedAt" -> "审核时间";
+            default -> field;
+        };
+    }
+
+    private String reportFieldValue(MonthlyReportView row, String field) {
+        return switch (field) {
+            case "id" -> String.valueOf(row.id());
+            case "enterpriseName" -> String.valueOf(row.enterpriseName());
+            case "cityName" -> String.valueOf(row.cityName());
+            case "periodName" -> String.valueOf(row.periodName());
+            case "archivedJobs" -> String.valueOf(row.archivedJobs());
+            case "surveyJobs" -> String.valueOf(row.surveyJobs());
+            case "status" -> String.valueOf(row.status());
+            case "cityReviewReason" -> String.valueOf(row.cityReviewReason());
+            case "provinceReviewReason" -> String.valueOf(row.provinceReviewReason());
+            case "submittedAt" -> String.valueOf(row.submittedAt());
+            case "updatedAt" -> String.valueOf(row.updatedAt());
+            default -> "";
+        };
+    }
+
+    private String enterpriseFieldValue(EnterpriseView row, String field) {
+        return switch (field) {
+            case "id" -> String.valueOf(row.id());
+            case "enterpriseName" -> String.valueOf(row.enterpriseName());
+            case "orgCode" -> String.valueOf(row.orgCode());
+            case "cityName" -> String.valueOf(row.cityName());
+            case "countyName" -> String.valueOf(row.countyName());
+            case "enterpriseNature" -> String.valueOf(row.enterpriseNature());
+            case "industry" -> String.valueOf(row.industry());
+            case "contactName" -> String.valueOf(row.contactName());
+            case "contactPhone" -> String.valueOf(row.contactPhone());
+            case "status" -> String.valueOf(row.status());
+            case "reviewReason" -> String.valueOf(row.reviewReason());
+            case "submittedAt" -> String.valueOf(row.submittedAt());
+            case "reviewedAt" -> String.valueOf(row.reviewedAt());
+            default -> "";
+        };
+    }
+
     private String csvEscape(String value) {
         String text = value == null ? "" : value;
         if (text.contains("\"") || text.contains(",") || text.contains("\n") || text.contains("\r")) {
@@ -1283,6 +1575,12 @@ public class PlatformService {
 
     private UserView buildUserView(UserAccount account) {
         return new UserView(account.id, account.username, account.role.name(), account.cityName, account.enabled, account.lockedUntil);
+    }
+
+    private UserManageView buildUserManageView(UserAccount account) {
+        return new UserManageView(account.id, account.username, account.role.name(), account.cityName,
+                account.phone, account.enabled, account.failedLoginCount,
+                account.lockedUntil, account.enterpriseId != null);
     }
 
     private UserAccount requireUser(String token) {
@@ -1808,6 +2106,8 @@ public class PlatformService {
         static LoginResponse locked(String message, Instant lockUntil) { return new LoginResponse(false, message, null, null, false, null, null, lockUntil); }
     }
     public record UserView(long id, String username, String role, String cityName, boolean enabled, Instant lockedUntil) {}
+    public record UserManageView(long id, String username, String role, String cityName, String phone,
+                                 boolean enabled, Integer failedLoginCount, Instant lockedUntil, boolean hasEnterpriseBinding) {}
     public record PagedResult<T>(List<T> items, int page, int size, long total, int totalPages) {}
     public record EnterpriseRequest(Long enterpriseId, String regionProvince, String cityName, String countyName, String orgCode, String enterpriseName, String enterpriseNature, String industry, String contactName, String contactPhone, String address) {}
     public record EnterpriseView(long id, String enterpriseName, String orgCode, String cityName, String countyName, String enterpriseNature, String industry, String contactName, String contactPhone, String status, String reviewReason, Instant submittedAt, Instant reviewedAt) {
@@ -1839,9 +2139,14 @@ public class PlatformService {
     public record SurveyPeriodRequest(Long periodId, String name, String startDate, String endDate, String submissionStart, String submissionEnd, boolean active) {}
     public record SurveyPeriodView(long id, String name, String startDate, String endDate, String submissionStart, String submissionEnd, boolean active) { static SurveyPeriodView from(SurveyPeriod period) { return new SurveyPeriodView(period.id, period.name, period.startDate.toString(), period.endDate.toString(), period.submissionStart.toString(), period.submissionEnd.toString(), period.active); } }
     public record UserCreateRequest(String username, String password, Role role, String cityName, String phone) {}
+    public record UserRoleUpdateRequest(Long userId, Role role, String cityName) {}
+    public record UserEnableRequest(Long userId, boolean enabled) {}
+    public record UserUnlockRequest(Long userId) {}
+    public record UserAdminResetPasswordRequest(Long userId, String newPassword, String confirmPassword) {}
     public record ChangePasswordRequest(String oldPassword, String newPassword, String confirmPassword) {}
     public record PasswordResetRequest(String username, String phone, String newPassword, String confirmPassword) {}
     public record BatchCityReviewRequest(List<Long> reportIds, boolean approved, String reason) {}
+    public record BatchProvinceReviewRequest(List<Long> reportIds, boolean approved, String reason) {}
     public record BatchReviewResult(List<Long> successIds, List<String> failedMessages) {}
     public record PublishResult(long periodId, String periodName, int total, int changed, Instant publishedAt) {}
     public record TransmissionView(long logId, long reportId, String enterpriseName, long periodId, String periodName,

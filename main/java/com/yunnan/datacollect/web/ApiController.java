@@ -1,6 +1,7 @@
 package com.yunnan.datacollect.web;
 
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Map;
 
 import org.springframework.http.HttpHeaders;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.yunnan.datacollect.service.PlatformService;
 import com.yunnan.datacollect.service.PlatformService.BatchCityReviewRequest;
+import com.yunnan.datacollect.service.PlatformService.BatchProvinceReviewRequest;
 import com.yunnan.datacollect.service.PlatformService.ChangePasswordRequest;
 import com.yunnan.datacollect.service.PlatformService.ComparisonRequest;
 import com.yunnan.datacollect.service.PlatformService.EnterpriseRequest;
@@ -26,7 +28,11 @@ import com.yunnan.datacollect.service.PlatformService.NoticeRequest;
 import com.yunnan.datacollect.service.PlatformService.PasswordResetRequest;
 import com.yunnan.datacollect.service.PlatformService.SurveyPeriodRequest;
 import com.yunnan.datacollect.service.PlatformService.TrendRequest;
+import com.yunnan.datacollect.service.PlatformService.UserAdminResetPasswordRequest;
 import com.yunnan.datacollect.service.PlatformService.UserCreateRequest;
+import com.yunnan.datacollect.service.PlatformService.UserEnableRequest;
+import com.yunnan.datacollect.service.PlatformService.UserRoleUpdateRequest;
+import com.yunnan.datacollect.service.PlatformService.UserUnlockRequest;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -165,6 +171,12 @@ public class ApiController {
         return ApiResponse.ok(platformService.reviewProvinceReport(token, reportId, approved, reason));
     }
 
+    @PostMapping("/reports/province-review/batch")
+    public ApiResponse<?> provinceReviewBatch(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                              @RequestBody BatchProvinceReviewRequest request) {
+        return ApiResponse.ok(platformService.reviewProvinceReportBatch(token, request));
+    }
+
     @PostMapping("/reports/{reportId}/province-correct")
     public ApiResponse<?> provinceCorrect(@RequestHeader(value = "X-Auth-Token", required = false) String token,
                                            @PathVariable long reportId,
@@ -272,6 +284,34 @@ public class ApiController {
         return ApiResponse.ok(platformService.logs(token, targetType, targetId));
     }
 
+    @GetMapping("/logs/page")
+    public ApiResponse<?> logsPage(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                   @RequestParam(required = false) String targetType,
+                                   @RequestParam(required = false) Long targetId,
+                                   @RequestParam(required = false) String action,
+                                   @RequestParam(required = false) String actorName,
+                                   @RequestParam(required = false) String createdFrom,
+                                   @RequestParam(required = false) String createdTo,
+                                   @RequestParam(defaultValue = "1") Integer page,
+                                   @RequestParam(defaultValue = "10") Integer size) {
+        return ApiResponse.ok(platformService.logsPage(token, targetType, targetId, action, actorName, createdFrom, createdTo, page, size));
+    }
+
+    @GetMapping("/logs/export-csv")
+    public ResponseEntity<byte[]> exportLogsCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                                @RequestParam(required = false) String targetType,
+                                                @RequestParam(required = false) Long targetId,
+                                                @RequestParam(required = false) String action,
+                                                @RequestParam(required = false) String actorName,
+                                                @RequestParam(required = false) String createdFrom,
+                                                @RequestParam(required = false) String createdTo) {
+        byte[] file = platformService.exportLogsCsv(token, targetType, targetId, action, actorName, createdFrom, createdTo);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=audit-logs.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+    }
+
     @GetMapping("/transmissions")
     public ApiResponse<?> transmissions(@RequestHeader(value = "X-Auth-Token", required = false) String token,
                                         @RequestParam(required = false) Long periodId) {
@@ -282,6 +322,41 @@ public class ApiController {
     public ApiResponse<?> createUser(@RequestHeader(value = "X-Auth-Token", required = false) String token,
                                      @RequestBody UserCreateRequest request) {
         return ApiResponse.ok(platformService.createUser(token, request));
+    }
+
+    @GetMapping("/users")
+    public ApiResponse<?> users(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                @RequestParam(required = false) String keyword,
+                                @RequestParam(required = false) String role,
+                                @RequestParam(required = false) String city,
+                                @RequestParam(required = false) Boolean enabled,
+                                @RequestParam(defaultValue = "1") Integer page,
+                                @RequestParam(defaultValue = "10") Integer size) {
+        return ApiResponse.ok(platformService.listUsersPage(token, keyword, role, city, enabled, page, size));
+    }
+
+    @PostMapping("/users/role")
+    public ApiResponse<?> updateUserRole(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                         @RequestBody UserRoleUpdateRequest request) {
+        return ApiResponse.ok(platformService.updateUserRole(token, request));
+    }
+
+    @PostMapping("/users/enabled")
+    public ApiResponse<?> updateUserEnabled(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                            @RequestBody UserEnableRequest request) {
+        return ApiResponse.ok(platformService.setUserEnabled(token, request));
+    }
+
+    @PostMapping("/users/unlock")
+    public ApiResponse<?> unlockUser(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                     @RequestBody UserUnlockRequest request) {
+        return ApiResponse.ok(platformService.unlockUser(token, request));
+    }
+
+    @PostMapping("/users/reset-password-admin")
+    public ApiResponse<?> resetUserPasswordByAdmin(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                                   @RequestBody UserAdminResetPasswordRequest request) {
+        return ApiResponse.ok(platformService.adminResetUserPassword(token, request));
     }
 
     @GetMapping("/dashboard/export/notices")
@@ -339,6 +414,43 @@ public class ApiController {
                 .body(file);
     }
 
+            @GetMapping("/dashboard/export/reports-custom-csv")
+            public ResponseEntity<byte[]> exportReportsCustomCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                     @RequestParam(required = false) String fields,
+                                     @RequestParam(required = false) String status,
+                                     @RequestParam(required = false) Long periodId,
+                                     @RequestParam(required = false) String city) {
+            byte[] file = platformService.exportReportsCustomCsv(
+                token,
+                platformService.listReports(token, status, periodId, city),
+                parseFields(fields)
+            );
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=reports-custom.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+            }
+
+            @GetMapping("/dashboard/export/enterprises-custom-csv")
+            public ResponseEntity<byte[]> exportEnterprisesCustomCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
+                                         @RequestParam(required = false) String fields,
+                                         @RequestParam(required = false) String status,
+                                         @RequestParam(required = false) String city,
+                                         @RequestParam(required = false) String keyword,
+                                         @RequestParam(required = false) String nature,
+                                         @RequestParam(required = false) String industry,
+                                         @RequestParam(required = false) String orgCode) {
+            byte[] file = platformService.exportEnterprisesCustomCsv(
+                token,
+                platformService.listEnterprises(token, status, city, keyword, nature, industry, orgCode),
+                parseFields(fields)
+            );
+            return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=enterprises-custom.csv")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(file);
+            }
+
         @GetMapping("/dashboard/export/summary-csv")
         public ResponseEntity<byte[]> exportSummaryCsv(@RequestHeader(value = "X-Auth-Token", required = false) String token,
                                @RequestParam(required = false) Long periodId) {
@@ -360,5 +472,15 @@ public class ApiController {
             return forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private java.util.List<String> parseFields(String fields) {
+        if (fields == null || fields.isBlank()) {
+            return java.util.List.of();
+        }
+        return Arrays.stream(fields.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
     }
 }
