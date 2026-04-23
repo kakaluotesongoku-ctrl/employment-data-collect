@@ -112,6 +112,10 @@ GET http://localhost:8082/api/health
 
 - [main/docs/项目变更单_计划变更一_半月报调整.md](main/docs/%E9%A1%B9%E7%9B%AE%E5%8F%98%E6%9B%B4%E5%8D%95_%E8%AE%A1%E5%88%92%E5%8F%98%E6%9B%B4%E4%B8%80_%E5%8D%8A%E6%9C%88%E6%8A%A5%E8%B0%83%E6%95%B4.md)
 
+计划变更二（企业上报+市省审核支持手机端、工期由2个月调整为2个月+2周）变更单见：
+
+- [main/docs/项目变更单_计划变更二_移动端与工期调整.md](main/docs/%E9%A1%B9%E7%9B%AE%E5%8F%98%E6%9B%B4%E5%8D%95_%E8%AE%A1%E5%88%92%E5%8F%98%E6%9B%B4%E4%BA%8C_%E7%A7%BB%E5%8A%A8%E7%AB%AF%E4%B8%8E%E5%B7%A5%E6%9C%9F%E8%B0%83%E6%95%B4.md)
+
 ## 10. 常见问题
 
 1. 打包时报 Unable to rename ...jar to ...jar.original

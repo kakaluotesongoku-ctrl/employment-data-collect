@@ -132,4 +132,17 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 @media (max-width: 960px) {
   .hero, .summary, .grid.two, .grid.three, .grid.four { grid-template-columns: 1fr; }
   .stats { grid-template-columns: 1fr; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tab { width: 100%; text-align: center; }
+  .analysis-panels { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .shell { width: calc(100% - 16px); margin: 12px auto 28px; gap: 12px; }
+  .card { padding: 14px; border-radius: 16px; }
+  .actions { gap: 8px; }
+  .actions button { width: 100%; min-height: 44px; }
+  .mobile-critical-actions { position: sticky; bottom: 8px; z-index: 20; background: rgba(8, 17, 31, 0.9); padding: 10px; border: 1px solid var(--border); border-radius: 14px; }
+  .mobile-critical-actions button { font-size: 14px; }
+  .pager-info { width: 100%; }
 }
